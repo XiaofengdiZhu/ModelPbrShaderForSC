@@ -53,6 +53,11 @@ namespace Game {
         public Matrix4x4 CameraView { get; init; }
 
         /// <summary>
+        /// 世界视图投影矩阵
+        /// </summary>
+        public Matrix4x4 Wvp { get; init; }
+
+        /// <summary>
         /// 是否启用蒙皮动画
         /// </summary>
         public bool EnableSkinning { get; init; }

@@ -39,7 +39,7 @@ out vec4 g_finalColor;
 in vec2 v_instanceLight;
 #else
 uniform float u_TerrainLight;
-uniform float u_SunVisible;
+uniform float u_CelestialBody;
 #endif
 
 
@@ -311,7 +311,7 @@ void main()
 #ifdef USE_INSTANCING
         lightIntensity *= v_instanceLight.y;
 #else
-        lightIntensity *= u_SunVisible;
+        lightIntensity *= u_CelestialBody;
 #endif
 
         vec3 l_diffuse = lightIntensity * NdotL * BRDF_lambertian(baseColor.rgb);
@@ -369,7 +369,7 @@ void main()
 #ifdef USE_INSTANCING
         intensity *= v_instanceLight.y;
 #else
-        intensity *= u_SunVisible;
+        intensity *= u_CelestialBody;
 #endif
 
         #ifdef MATERIAL_ANISOTROPY

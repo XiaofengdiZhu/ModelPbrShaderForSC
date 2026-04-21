@@ -119,14 +119,12 @@ namespace Game {
         }
 
         public override void Render(ModelMesh mesh, ModelMaterial material,
-            Matrix wvpMatrixEngine, Matrix worldMatrixEngine, Model model,
-            float lightIntensity, float sunVisible, Texture2D textureOverride,
+            SubsystemModelsRenderer.ModelData modelData,
+            Texture2D textureOverride,
             JointTexture jointTexture = null) {
             if (mesh == null) return;
 
             _currentTextureOverride = textureOverride;
-            Matrix4x4 wvpMatrix = wvpMatrixEngine;
-            Matrix4x4 worldMatrix = worldMatrixEngine;
 
             ModelMaterial effectiveMaterial;
             if (material != null) {
@@ -167,17 +165,17 @@ namespace Game {
                 _terrainLightLocCache[programHandle] = terrainLightLoc;
             }
             if (terrainLightLoc >= 0) {
-                GLWrapper.GL.Uniform1(terrainLightLoc, lightIntensity);
+                GLWrapper.GL.Uniform1(terrainLightLoc, modelData.Light);
             }
-            if (!_sunVisibleLocCache.TryGetValue(programHandle, out int sunVisibleLoc)) {
-                sunVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_SunVisible");
-                _sunVisibleLocCache[programHandle] = sunVisibleLoc;
+            if (!_celestialBodyVisibleLocCache.TryGetValue(programHandle, out int celestialBodyVisibleLoc)) {
+                celestialBodyVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_CelestialBody");
+                _celestialBodyVisibleLocCache[programHandle] = celestialBodyVisibleLoc;
             }
-            if (sunVisibleLoc >= 0) {
-                GLWrapper.GL.Uniform1(sunVisibleLoc, sunVisible);
+            if (celestialBodyVisibleLoc >= 0) {
+                GLWrapper.GL.Uniform1(celestialBodyVisibleLoc, modelData.CelestialBodyVisible ? 1f : 0f);
             }
 
-            UpdateRenderStateUBO(wvpMatrix, worldMatrix);
+            UpdateRenderStateUBO(CurrentContext.Wvp, CurrentContext.CameraView);
             UpdateMaterialUBOs(effectiveMaterial, false);
             UpdateUVTransformUBO(effectiveMaterial);
 
@@ -185,8 +183,11 @@ namespace Game {
                 MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
                 MaterialTextureBinder.SetTextureSlotUniforms(shader);
             }
-            else if (model != null && material != null) {
-                BindMaterialTextures(model, material, shader, null);
+            else if (material != null) {
+                Model model = modelData.ComponentModel?.Model;
+                if (model != null) {
+                    BindMaterialTextures(model, material, shader, null);
+                }
             }
 
             if (_iblSampler != null && CurrentContext.UseIBL) {

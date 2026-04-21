@@ -64,7 +64,7 @@ namespace Game {
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
         protected readonly Dictionary<int, int> _glymulLocationCache = [];
         protected readonly Dictionary<int, int> _terrainLightLocCache = [];
-        protected readonly Dictionary<int, int> _sunVisibleLocCache = [];
+        protected readonly Dictionary<int, int> _celestialBodyVisibleLocCache = [];
 
         // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2)
         protected const int InstanceLightAttribLocation = 12;
@@ -200,6 +200,7 @@ namespace Game {
                 View = System.Numerics.Matrix4x4.Identity,
                 Projection = camera.ProjectionMatrix,
                 CameraView = camera.ViewMatrix,
+                Wvp = camera.ViewMatrix * camera.ProjectionMatrix,
                 UseIBL = HasIBL,
                 ToneMapMode = ToneMapMode.KhrPbrNeutral,
                 LightCount = 1,
@@ -249,11 +250,7 @@ namespace Game {
 
         public abstract void Render(ModelMesh mesh,
             ModelMaterial material,
-            Matrix wvpMatrixEngine,
-            Matrix worldMatrixEngine,
-            Model model,
-            float lightIntensity,
-            float sunVisible,
+            SubsystemModelsRenderer.ModelData modelData,
             Texture2D textureOverride,
             JointTexture jointTexture = null);
 
