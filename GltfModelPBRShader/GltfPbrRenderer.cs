@@ -172,7 +172,7 @@ namespace Game {
                 _celestialBodyVisibleLocCache[programHandle] = celestialBodyVisibleLoc;
             }
             if (celestialBodyVisibleLoc >= 0) {
-                GLWrapper.GL.Uniform1(celestialBodyVisibleLoc, modelData.CelestialBodyVisible ? 1f : 0f);
+                GLWrapper.GL.Uniform1(celestialBodyVisibleLoc, GetCelestialBodyVisible(modelData) ? 1f : 0f);
             }
 
             UpdateRenderStateUBO(CurrentContext.Wvp, CurrentContext.CameraView);
@@ -261,7 +261,7 @@ namespace Game {
                 UpdateMaterialUBOs(effectiveMaterial, false);
                 UpdateUVTransformUBO(effectiveMaterial);
 
-                Model model = groupInstances[0].Model;
+                Model model = groupInstances[0].ModelData.ComponentModel.Model;
                 if (textureOverride != null) {
                     MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
                     MaterialTextureBinder.SetTextureSlotUniforms(shader);
@@ -278,10 +278,11 @@ namespace Game {
                 for (int offset = 0; offset < groupInstances.Count; offset += MaxInstancesPerBatch) {
                     int count = Math.Min(MaxInstancesPerBatch, groupInstances.Count - offset);
                     for (int i = 0; i < count; i++) {
-                        _instanceMatrices[i] = groupInstances[offset + i].WorldMatrix;
-                        _instanceLightData[i] = new System.Numerics.Vector2(
-                            groupInstances[offset + i].LightIntensity,
-                            groupInstances[offset + i].CelestialBodyVisible);
+                        var inst = groupInstances[offset + i];
+                        _instanceMatrices[i] = inst.WorldMatrix;
+                        _instanceLightData[i] = new Engine.Vector2(
+                            inst.ModelData.Light,
+                            GetCelestialBodyVisible(inst.ModelData) ? 1f : 0f);
                     }
 
                     UploadInstanceData(_instanceMatrices, count);

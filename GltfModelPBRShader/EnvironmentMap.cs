@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Engine;
 using Engine.Graphics;
+using Vector3 = Engine.Vector3;
 
 namespace Game {
     /// <summary>
@@ -191,7 +192,7 @@ namespace Game {
             return (r, g, b);
         }
 
-        public (float R, float G, float B) SampleDirection(System.Numerics.Vector3 direction) {
+        public (float R, float G, float B) SampleDirection(Vector3 direction) {
             float u = MathF.Atan2(direction.Z, direction.X) / (2 * MathF.PI) + 0.5f;
             float v = MathF.Asin(Math.Clamp(direction.Y, -1, 1)) / MathF.PI + 0.5f;
             return Sample(u, v);

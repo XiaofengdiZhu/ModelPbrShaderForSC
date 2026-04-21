@@ -7,6 +7,8 @@ using Engine.Media;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
 using Silk.NET.OpenGLES;
+using Vector2 = Engine.Vector2;
+using Vector3 = Engine.Vector3;
 
 namespace Game {
     /// <summary>
@@ -37,6 +39,11 @@ namespace Game {
         protected SubsystemModelsRenderer _subsystemModelsRenderer;
         protected SubsystemSky _subsystemSky;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
+        protected SubsystemTerrain _subsystemTerrain;
+
+        // 天体可见性缓存（懒计算，0.1s 节流）
+        struct CelestialBodyCacheEntry { public bool Visible; public double Timestamp; }
+        readonly Dictionary<SubsystemModelsRenderer.ModelData, CelestialBodyCacheEntry> _celestialBodyCache = new();
 
         // 材质缓存状态（子类可访问）
         protected ModelMaterial LastMaterial;
@@ -44,13 +51,12 @@ namespace Game {
         protected bool UvTransformDirty = true;
 
         // 帧级光照数据（逐模型缩放时使用）
-        System.Numerics.Vector3 _baseLightColor;
-        System.Numerics.Vector3 _viewLightDir;
+        Vector3 _baseLightColor;
+        Vector3 _viewLightDir;
 
         // 缓存优化
         int _cachedContextHash;
         (bool useIBL, bool useLinearOutput, ToneMapMode toneMapMode, int lightCount, DebugChannel debugChannel) _lastContextParams;
-        float _lastTimeOfDay = -1f;
 
         // 实例化渲染
         int _instanceVBO;
@@ -58,7 +64,7 @@ namespace Game {
         bool _instanceBufferCreated;
         protected const int MaxInstancesPerBatch = 256;
         protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
-        protected System.Numerics.Vector2[] _instanceLightData = new System.Numerics.Vector2[MaxInstancesPerBatch];
+        protected Vector2[] _instanceLightData = new Vector2[MaxInstancesPerBatch];
 
         // Uniform location 缓存
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
@@ -103,6 +109,43 @@ namespace Game {
             _subsystemModelsRenderer = subsystemModelsRenderer;
             _subsystemSky = _subsystemModelsRenderer.m_subsystemSky;
             _subsystemTimeOfDay = _subsystemModelsRenderer.m_subsystemTimeOfDay;
+            _subsystemTerrain = _subsystemModelsRenderer.m_subsystemTerrain;
+        }
+
+        protected bool GetCelestialBodyVisible(SubsystemModelsRenderer.ModelData modelData) {
+            double now = Time.FrameStartTime;
+            if (_celestialBodyCache.TryGetValue(modelData, out var entry) && (now - entry.Timestamp) < 0.1) {
+                return entry.Visible;
+            }
+            bool visible = CalculateCelestialBodyVisibility(modelData);
+            _celestialBodyCache[modelData] = new CelestialBodyCacheEntry { Visible = visible, Timestamp = now };
+            return visible;
+        }
+
+        bool CalculateCelestialBodyVisibility(SubsystemModelsRenderer.ModelData modelData) {
+            Vector3 dir = new(-ActiveLightDirection.X, -ActiveLightDirection.Y, -ActiveLightDirection.Z);
+            if (dir.Y < 0f) return false;
+
+            Vector3 p;
+            if (modelData.ComponentBody != null) {
+                p = modelData.ComponentBody.Position;
+                p.Y += 0.95f * (modelData.ComponentBody.BoundingBox.Max.Y - modelData.ComponentBody.BoundingBox.Min.Y);
+            } else {
+                Matrix? boneTransform = modelData.ComponentModel.GetBoneTransform(
+                    modelData.ComponentModel.Model.RootBone.Index);
+                p = !boneTransform.HasValue
+                    ? Vector3.Zero
+                    : boneTransform.Value.Translation + new Vector3(0f, 0.9f, 0f);
+            }
+
+            int cellX = Terrain.ToCell(p.X);
+            int cellZ = Terrain.ToCell(p.Z);
+            int topHeight = _subsystemTerrain.Terrain.CalculateTopmostCellHeight(cellX, cellZ);
+            float maxDist = p.Y >= topHeight ? 16f : 32f;
+
+            Vector3 end = p + dir * maxDist;
+            TerrainRaycastResult? result = _subsystemTerrain.Raycast(p, end, false, true, null);
+            return !result.HasValue;
         }
 
         protected AdvancedMeshRenderer() {
@@ -138,9 +181,6 @@ namespace Game {
         public virtual void BeginFrame(Camera camera) {
             // Build RenderContext from subsystems
             float timeOfDay = _subsystemTimeOfDay.TimeOfDay;
-            if (timeOfDay == _lastTimeOfDay) {
-                return;
-            }
             float midday = _subsystemTimeOfDay.Midday;
 
             // Sun direction
@@ -168,7 +208,7 @@ namespace Game {
                 _subsystemSky.CalculateDuskGlowIntensity(timeOfDay));
             float precipitationIntensity = _subsystemSky.m_subsystemWeather.PrecipitationIntensity;
             float precipitationDim = MathUtils.Lerp(1f, 0f, precipitationIntensity);
-            System.Numerics.Vector3 sunColor = System.Numerics.Vector3.Lerp(
+            Vector3 sunColor = Vector3.Lerp(
                 new(1f, 1f, 1f),
                 new(1f, 1f, 0.627f),
                 dawnGlow) * precipitationDim;
@@ -178,11 +218,11 @@ namespace Game {
             // Moonlight with moon phase
             float moonPhaseFactor = _subsystemSky.MoonPhase == 4 ? 0.0f : 0.15f;
             float moonIntensity = (1f - skyIntensity) * moonPhaseFactor;
-            System.Numerics.Vector3 moonColor = new System.Numerics.Vector3(0.8f, 0.85f, 1.0f) * moonIntensity;
+            Vector3 moonColor = new Vector3(0.8f, 0.85f, 1.0f) * moonIntensity;
 
             // Select main light
-            Engine.Vector3 lightDirection;
-            System.Numerics.Vector3 lightColor;
+            Vector3 lightDirection;
+            Vector3 lightColor;
             if (skyIntensity >= moonIntensity) {
                 lightDirection = sunDir;
                 lightColor = sunColor * skyIntensity;
@@ -232,7 +272,7 @@ namespace Game {
             SceneUBO.Update(ref sceneData);
 
             // 方向光：使用 CameraView 将世界空间光照方向变换到 view space
-            _viewLightDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(CurrentContext.LightDirection, cameraView));
+            _viewLightDir = Vector3.Normalize(Vector3.TransformNormal(CurrentContext.LightDirection, cameraView));
             _baseLightColor = CurrentContext.LightColor;
 
             UpdateLightsUBO(1f);
@@ -497,10 +537,10 @@ namespace Game {
             }
         }
 
-        protected void UploadInstanceLightData(System.Numerics.Vector2[] lightData, int count) {
+        protected void UploadInstanceLightData(Vector2[] lightData, int count) {
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
             unsafe {
-                fixed (System.Numerics.Vector2* ptr = lightData) {
+                fixed (Vector2* ptr = lightData) {
                     GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 8), ptr);
                 }
             }

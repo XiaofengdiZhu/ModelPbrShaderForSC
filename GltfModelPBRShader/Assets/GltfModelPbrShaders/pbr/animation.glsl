@@ -41,7 +41,7 @@ mat4 getMatrixFromTexture(sampler2D s, int index)
         int y = (pixelIndex + i - x) / texSize;
         result[i] = texelFetch(s, ivec2(x, y), 0);
     }
-    return result;
+    return transpose(result);
 }
 
 mat4 getSkinningMatrix()
