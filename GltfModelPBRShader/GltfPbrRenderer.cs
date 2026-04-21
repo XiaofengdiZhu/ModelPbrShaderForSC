@@ -97,6 +97,7 @@ namespace Game {
             GLWrapper.GL.BindAttribLocation(program, 6, "a_joints_0");
             GLWrapper.GL.BindAttribLocation(program, 7, "a_weights_0");
             GLWrapper.GL.BindAttribLocation(program, 8, "a_instance_model_matrix");
+            GLWrapper.GL.BindAttribLocation(program, InstanceLightAttribLocation, "a_instance_light");
         }
 
         static void BindUniformBlocks(uint program) {
@@ -110,7 +111,7 @@ namespace Game {
 
         public override void Render(ModelMesh mesh, ModelMaterial material,
             Matrix wvpMatrixEngine, Matrix worldMatrixEngine, Model model,
-            float lightIntensity, Texture2D textureOverride,
+            float lightIntensity, float sunVisible, Texture2D textureOverride,
             JointTexture jointTexture = null) {
             if (mesh == null) return;
 
@@ -149,6 +150,22 @@ namespace Game {
             if (glymulLoc >= 0) {
                 float glymul = Display.RenderTarget != null ? -1f : 1f;
                 GLWrapper.GL.Uniform1(glymulLoc, glymul);
+            }
+
+            // 非 instanced 路径: 设置地形光照和太阳可见性 uniform
+            if (!_terrainLightLocCache.TryGetValue(programHandle, out int terrainLightLoc)) {
+                terrainLightLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TerrainLight");
+                _terrainLightLocCache[programHandle] = terrainLightLoc;
+            }
+            if (terrainLightLoc >= 0) {
+                GLWrapper.GL.Uniform1(terrainLightLoc, lightIntensity);
+            }
+            if (!_sunVisibleLocCache.TryGetValue(programHandle, out int sunVisibleLoc)) {
+                sunVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_SunVisible");
+                _sunVisibleLocCache[programHandle] = sunVisibleLoc;
+            }
+            if (sunVisibleLoc >= 0) {
+                GLWrapper.GL.Uniform1(sunVisibleLoc, sunVisible);
             }
 
             UpdateRenderStateUBO(wvpMatrix, worldMatrix);
@@ -230,7 +247,7 @@ namespace Game {
                 }
 
                 UpdateRenderStateUBOForInstancing();
-                UpdateLightsUBO(groupInstances[0].LightIntensity);
+                UpdateLightsUBO(1f);
                 UpdateMaterialUBOs(effectiveMaterial, false);
                 UpdateUVTransformUBO(effectiveMaterial);
 
@@ -252,9 +269,13 @@ namespace Game {
                     int count = Math.Min(MaxInstancesPerBatch, groupInstances.Count - offset);
                     for (int i = 0; i < count; i++) {
                         _instanceMatrices[i] = groupInstances[offset + i].WorldMatrix;
+                        _instanceLightData[i] = new System.Numerics.Vector2(
+                            groupInstances[offset + i].LightIntensity,
+                            groupInstances[offset + i].SunVisible);
                     }
 
                     UploadInstanceData(_instanceMatrices, count);
+                    UploadInstanceLightData(_instanceLightData, count);
                     SetupInstanceAttributes();
                     SetupDepthState(effectiveMaterial);
                     SetupCullMode(effectiveMaterial);

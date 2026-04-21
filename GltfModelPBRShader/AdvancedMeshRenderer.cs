@@ -54,14 +54,21 @@ namespace Game {
 
         // 实例化渲染
         int _instanceVBO;
+        int _instanceLightVBO;
         bool _instanceBufferCreated;
         protected const int MaxInstancesPerBatch = 256;
         protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
+        protected System.Numerics.Vector2[] _instanceLightData = new System.Numerics.Vector2[MaxInstancesPerBatch];
         Engine.Matrix _cachedEngineProjection;
 
         // Uniform location 缓存
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
         protected readonly Dictionary<int, int> _glymulLocationCache = [];
+        protected readonly Dictionary<int, int> _terrainLightLocCache = [];
+        protected readonly Dictionary<int, int> _sunVisibleLocCache = [];
+
+        // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2)
+        protected const int InstanceLightAttribLocation = 12;
 
         /// <summary>
         /// 当前视图投影矩阵
@@ -72,6 +79,16 @@ namespace Game {
         /// IBL 环境贴图强度（默认 1.0）
         /// </summary>
         public float EnvironmentStrength { get; set; } = 1.0f;
+
+        /// <summary>
+        /// 当前激活的方向光方向（世界空间）
+        /// </summary>
+        public Engine.Vector3 ActiveLightDirection { get; private set; } = Engine.Vector3.UnitY;
+
+        /// <summary>
+        /// 当前方向光是否在地平线以上（太阳/月亮可见）
+        /// </summary>
+        public bool IsDirectionalLightActive { get; private set; } = true;
 
         /// <summary>
         /// IBL mipmap 层数
@@ -177,6 +194,8 @@ namespace Game {
 
             // IBL strength follows day/night cycle
             EnvironmentStrength = Math.Max(skyIntensity, 0.1f);
+            ActiveLightDirection = lightDirection;
+            IsDirectionalLightActive = lightDirection.Y <= 0f;
 
             CurrentContext = new RenderContext {
                 View = System.Numerics.Matrix4x4.Identity,
@@ -233,7 +252,7 @@ namespace Game {
         /// <summary>
         /// 渲染网格
         /// </summary>
-        public virtual void Render(ModelMesh mesh, ModelMaterial material, Matrix wvpMatrixEngine, Matrix worldMatrixEngine, Model model, float lightIntensity, Texture2D textureOverride, JointTexture jointTexture = null) {
+        public virtual void Render(ModelMesh mesh, ModelMaterial material, Matrix wvpMatrixEngine, Matrix worldMatrixEngine, Model model, float lightIntensity, float sunVisible, Texture2D textureOverride, JointTexture jointTexture = null) {
             Matrix4x4 wvpMatrix = wvpMatrixEngine;
             Matrix4x4 worldMatrix = worldMatrixEngine;
             if (mesh == null) return;
@@ -261,11 +280,29 @@ namespace Game {
                 GLWrapper.GL.Uniform1(glymulLoc, glymul);
             }
 
+            // 设置 per-model 地形光照 uniform（非实例化路径）
+            if (!_terrainLightLocCache.TryGetValue(programHandle, out int terrainLightLoc)) {
+                terrainLightLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TerrainLight");
+                _terrainLightLocCache[programHandle] = terrainLightLoc;
+            }
+            if (terrainLightLoc >= 0) {
+                GLWrapper.GL.Uniform1(terrainLightLoc, lightIntensity);
+            }
+
+            // 设置 per-model 太阳可见性 uniform（非实例化路径）
+            if (!_sunVisibleLocCache.TryGetValue(programHandle, out int sunVisibleLoc)) {
+                sunVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_SunVisible");
+                _sunVisibleLocCache[programHandle] = sunVisibleLoc;
+            }
+            if (sunVisibleLoc >= 0) {
+                GLWrapper.GL.Uniform1(sunVisibleLoc, sunVisible);
+            }
+
             // 更新 RenderState UBO
             UpdateRenderStateUBO(wvpMatrix, worldMatrix);
 
-            // 更新光照 UBO（逐模型强度缩放）
-            UpdateLightsUBO(lightIntensity);
+            // 更新光照 UBO（per-model 缩放已通过 u_TerrainLight/u_SunVisible uniform 处理）
+            UpdateLightsUBO(1f);
 
             // 更新 UV 变换 UBO
             UpdateUVTransformUBO(material);
@@ -303,7 +340,7 @@ namespace Game {
                 Engine.Matrix worldMatrix = inst.WorldMatrix;
                 Engine.Matrix wvpMatrix;
                 Engine.Matrix.MultiplyRestricted(ref worldMatrix, ref _cachedEngineProjection, out wvpMatrix);
-                Render(inst.Mesh, inst.Material, wvpMatrix, worldMatrix, inst.Model, inst.LightIntensity, inst.TextureOverride);
+                Render(inst.Mesh, inst.Material, wvpMatrix, worldMatrix, inst.Model, inst.LightIntensity, inst.SunVisible, inst.TextureOverride);
             }
         }
 
@@ -529,6 +566,11 @@ namespace Game {
                 _instanceVBO = (int)buffer;
                 GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
                 GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, (uint)(MaxInstancesPerBatch * 64), (void*)0, BufferUsageARB.DynamicDraw);
+
+                GLWrapper.GL.GenBuffers(1, out uint lightBuffer);
+                _instanceLightVBO = (int)lightBuffer;
+                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
+                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, (uint)(MaxInstancesPerBatch * 8), (void*)0, BufferUsageARB.DynamicDraw);
             }
             _instanceBufferCreated = true;
         }
@@ -543,6 +585,15 @@ namespace Game {
             }
         }
 
+        protected void UploadInstanceLightData(System.Numerics.Vector2[] lightData, int count) {
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
+            unsafe {
+                fixed (System.Numerics.Vector2* ptr = lightData) {
+                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 8), ptr);
+                }
+            }
+        }
+
         protected void SetupInstanceAttributes() {
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
             unsafe {
@@ -553,12 +604,20 @@ namespace Game {
                     GLWrapper.GL.VertexAttribDivisor(loc, 1);
                 }
             }
+            // Per-instance light: vec2 (terrainLight, sunVisible)
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
+            unsafe {
+                GLWrapper.GL.VertexAttribPointer(InstanceLightAttribLocation, 2, VertexAttribPointerType.Float, false, 8, (void*)0);
+                GLWrapper.GL.EnableVertexAttribArray(InstanceLightAttribLocation);
+                GLWrapper.GL.VertexAttribDivisor(InstanceLightAttribLocation, 1);
+            }
         }
 
         protected void DisableInstanceAttributes() {
             for (int i = 0; i < 4; i++) {
                 GLWrapper.GL.DisableVertexAttribArray((uint)(8 + i));
             }
+            GLWrapper.GL.DisableVertexAttribArray(InstanceLightAttribLocation);
         }
 
         /// <summary>
@@ -717,6 +776,8 @@ namespace Game {
             if (_instanceBufferCreated) {
                 uint vbo = (uint)_instanceVBO;
                 GLWrapper.GL.DeleteBuffers(1u, in vbo);
+                uint lightVbo = (uint)_instanceLightVBO;
+                GLWrapper.GL.DeleteBuffers(1u, in lightVbo);
                 _instanceBufferCreated = false;
             }
             _jointSamplerLocationCache.Clear();

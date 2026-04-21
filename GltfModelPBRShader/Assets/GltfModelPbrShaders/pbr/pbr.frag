@@ -35,6 +35,13 @@ precision highp float;
 
 out vec4 g_finalColor;
 
+#ifdef USE_INSTANCING
+in vec2 v_instanceLight;
+#else
+uniform float u_TerrainLight;
+uniform float u_SunVisible;
+#endif
+
 
 void main()
 {
@@ -230,6 +237,13 @@ void main()
 
     #endif//end USE_IBL
 
+    // Scale IBL by terrain light (both instanced and non-instanced)
+#ifdef USE_INSTANCING
+    color *= v_instanceLight.x;
+#else
+    color *= u_TerrainLight;
+#endif
+
     // Debug: raw IBL output (linear, no tone map, no punctual light)
     #if DEBUG == DEBUG_IBL_RAW
     g_finalColor = vec4(max(color, vec3(0.0)), baseColor.a);
@@ -294,6 +308,11 @@ void main()
         vec3 metal_fresnel = F_Schlick(baseColor.rgb, vec3(1.0), abs(VdotH));
 
         vec3 lightIntensity = getLighIntensity(light, pointToLight);
+#ifdef USE_INSTANCING
+        lightIntensity *= v_instanceLight.y;
+#else
+        lightIntensity *= u_SunVisible;
+#endif
 
         vec3 l_diffuse = lightIntensity * NdotL * BRDF_lambertian(baseColor.rgb);
         vec3 l_specular_dielectric = vec3(0.0);
@@ -347,6 +366,11 @@ void main()
         // Calculation of analytical light
         // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
         vec3 intensity = getLighIntensity(light, pointToLight);
+#ifdef USE_INSTANCING
+        intensity *= v_instanceLight.y;
+#else
+        intensity *= u_SunVisible;
+#endif
 
         #ifdef MATERIAL_ANISOTROPY
         l_specular_metal = intensity * NdotL * BRDF_specularGGXAnisotropy(materialInfo.alphaRoughness, materialInfo.anisotropyStrength, n, v, l, h, materialInfo.anisotropicT, materialInfo.anisotropicB);
