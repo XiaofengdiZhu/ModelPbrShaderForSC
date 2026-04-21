@@ -50,7 +50,14 @@ namespace Game {
         // 缓存优化
         int _cachedContextHash;
         (bool useIBL, bool useLinearOutput, ToneMapMode toneMapMode, int lightCount, DebugChannel debugChannel) _lastContextParams;
-        float _lastTimeOfDay;
+        float _lastTimeOfDay = -1f;
+
+        // 实例化渲染
+        int _instanceVBO;
+        bool _instanceBufferCreated;
+        protected const int MaxInstancesPerBatch = 256;
+        protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
+        Engine.Matrix _cachedEngineProjection;
 
         // Uniform location 缓存
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
@@ -186,6 +193,7 @@ namespace Game {
             UpdateContextHash(CurrentContext);
 
             CurrentViewProjection = CurrentContext.View * CurrentContext.Projection;
+            _cachedEngineProjection = camera.ProjectionMatrix;
 
             // 更新 SceneData UBO
             // SC 引擎的 ModelMatrix 含 ViewMatrix（AbsoluteBoneTransformsForCamera），
@@ -286,6 +294,20 @@ namespace Game {
         }
 
         /// <summary>
+        /// 批量渲染实例（默认实现：逐个调用 Render）
+        /// 子类重写以实现 GPU 实例化
+        /// </summary>
+        public virtual void RenderInstances(List<InstanceRenderData> instances) {
+            if (instances == null || instances.Count == 0) return;
+            foreach (var inst in instances) {
+                Engine.Matrix worldMatrix = inst.WorldMatrix;
+                Engine.Matrix wvpMatrix;
+                Engine.Matrix.MultiplyRestricted(ref worldMatrix, ref _cachedEngineProjection, out wvpMatrix);
+                Render(inst.Mesh, inst.Material, wvpMatrix, worldMatrix, inst.Model, inst.LightIntensity, inst.TextureOverride);
+            }
+        }
+
+        /// <summary>
         /// 获取或创建着色器变体
         /// </summary>
         protected virtual Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
@@ -315,6 +337,19 @@ namespace Game {
                 }
                 return hash;
             }
+        }
+
+        /// <summary>
+        /// 更新 RenderState UBO（实例化模式）
+        /// 只设置共享的投影矩阵，per-instance 变换由顶点属性提供
+        /// </summary>
+        protected void UpdateRenderStateUBOForInstancing() {
+            RenderStateData.ViewProjectionMatrix = CurrentContext.Projection;
+            RenderStateData.ModelMatrix = Matrix4x4.Identity;
+            RenderStateData.ViewMatrix = Matrix4x4.Identity;
+            RenderStateData.ProjectionMatrix = CurrentContext.Projection;
+            RenderStateData.NormalMatrix = Matrix4x4.Identity;
+            RenderStateUBO.Update(ref RenderStateData);
         }
 
         /// <summary>
@@ -487,6 +522,81 @@ namespace Game {
             }
         }
 
+        protected void EnsureInstanceBuffer() {
+            if (_instanceBufferCreated) return;
+            unsafe {
+                GLWrapper.GL.GenBuffers(1, out uint buffer);
+                _instanceVBO = (int)buffer;
+                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
+                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, (uint)(MaxInstancesPerBatch * 64), (void*)0, BufferUsageARB.DynamicDraw);
+            }
+            _instanceBufferCreated = true;
+        }
+
+        protected void UploadInstanceData(Matrix4x4[] matrices, int count) {
+            EnsureInstanceBuffer();
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
+            unsafe {
+                fixed (Matrix4x4* ptr = matrices) {
+                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 64), ptr);
+                }
+            }
+        }
+
+        protected void SetupInstanceAttributes() {
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
+            unsafe {
+                for (int i = 0; i < 4; i++) {
+                    uint loc = (uint)(8 + i);
+                    GLWrapper.GL.VertexAttribPointer(loc, 4, VertexAttribPointerType.Float, false, 64, new IntPtr(i * 16).ToPointer());
+                    GLWrapper.GL.EnableVertexAttribArray(loc);
+                    GLWrapper.GL.VertexAttribDivisor(loc, 1);
+                }
+            }
+        }
+
+        protected void DisableInstanceAttributes() {
+            for (int i = 0; i < 4; i++) {
+                GLWrapper.GL.DisableVertexAttribArray((uint)(8 + i));
+            }
+        }
+
+        /// <summary>
+        /// 实例化绘制网格
+        /// </summary>
+        protected virtual void DrawMeshInstanced(ModelMesh mesh, int instanceCount) {
+            if (mesh == null) return;
+
+            GLWrapper.ApplyViewportScissor(
+                Display.Viewport,
+                Display.ScissorRectangle,
+                Display.RasterizerState.ScissorTestEnable
+            );
+
+            VertexDeclaration lastDecl = null;
+            foreach (ModelMeshPart part in mesh.MeshParts) {
+                if (part?.VertexBuffer == null || part.IndexBuffer == null) continue;
+
+                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, part.VertexBuffer.m_buffer);
+                GLWrapper.BindBuffer(BufferTargetARB.ElementArrayBuffer, part.IndexBuffer.m_buffer);
+                if (part.VertexBuffer.VertexDeclaration != lastDecl) {
+                    SetupVertexAttributes(part.VertexBuffer.VertexDeclaration);
+                    lastDecl = part.VertexBuffer.VertexDeclaration;
+                }
+
+                unsafe {
+                    IntPtr indexOffset = new IntPtr(part.StartIndex * part.IndexBuffer.IndexFormat.GetSize());
+                    GLWrapper.GL.DrawElementsInstanced(
+                        Silk.NET.OpenGLES.PrimitiveType.Triangles,
+                        (uint)part.IndicesCount,
+                        GLWrapper.TranslateIndexFormat(part.IndexBuffer.IndexFormat),
+                        indexOffset.ToPointer(),
+                        (uint)instanceCount
+                    );
+                }
+            }
+        }
+
         /// <summary>
         /// 将 vertex semantic 字符串映射到着色器 attribute location
         /// </summary>
@@ -604,6 +714,11 @@ namespace Game {
             LightsUBO?.Dispose();
             RenderStateUBO?.Dispose();
             UVTransformUBO?.Dispose();
+            if (_instanceBufferCreated) {
+                uint vbo = (uint)_instanceVBO;
+                GLWrapper.GL.DeleteBuffers(1u, in vbo);
+                _instanceBufferCreated = false;
+            }
             _jointSamplerLocationCache.Clear();
             _glymulLocationCache.Clear();
         }

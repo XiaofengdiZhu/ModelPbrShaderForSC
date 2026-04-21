@@ -122,7 +122,8 @@ void main()
     gl_PointSize = 1.0f;
     #ifdef USE_INSTANCING
     mat4 modelMatrix = a_instance_model_matrix;
-    mat4 normalMatrix = transpose(inverse(modelMatrix));
+    // if you want to use non-uniform scale, replace the below line with `mat4 normalMatrix = transpose(inverse(modelMatrix));
+    mat4 normalMatrix = mat4(mat3(modelMatrix));
     #else
     mat4 modelMatrix = u_ModelMatrix;
     mat4 normalMatrix = u_NormalMatrix;
@@ -192,9 +193,12 @@ void main()
     #endif
     #endif
 
-    // Use pre-combined WVP with localPos (not modelMatrix*localPos)
-    // WVP = worldWithView * Projection (game convention)
-    // Before: gl_Position = u_ViewProjectionMatrix * pos;
+    // Non-instanced: WVP already contains per-model world transform
+    // Instanced: modelMatrix from per-instance attribute, Projection shared
+#ifdef USE_INSTANCING
+    gl_Position = u_ProjectionMatrix * modelMatrix * localPos;
+#else
     gl_Position = u_ViewProjectionMatrix * localPos;
+#endif
     OPENGL_POSITION_FIX;
 }

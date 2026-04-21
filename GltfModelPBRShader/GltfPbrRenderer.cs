@@ -15,6 +15,7 @@ namespace Game {
     public class GltfPbrRenderer : PbrMeshRenderer {
         IblSampler _iblSampler;
         bool _shadersLoaded;
+        readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<InstanceRenderData>> _instanceGroups = new();
         string _lastDefines;
         Texture2D _currentTextureOverride;
 
@@ -95,6 +96,7 @@ namespace Game {
             GLWrapper.GL.BindAttribLocation(program, 5, "a_tangent");
             GLWrapper.GL.BindAttribLocation(program, 6, "a_joints_0");
             GLWrapper.GL.BindAttribLocation(program, 7, "a_weights_0");
+            GLWrapper.GL.BindAttribLocation(program, 8, "a_instance_model_matrix");
         }
 
         static void BindUniformBlocks(uint program) {
@@ -175,6 +177,96 @@ namespace Game {
             DrawMesh(mesh);
         }
 
+        public override void RenderInstances(List<InstanceRenderData> instances) {
+            if (instances == null || instances.Count == 0) return;
+
+            // 1. 按 (mesh, material, textureOverride) 分组（复用字典）
+            _instanceGroups.Clear();
+            foreach (var inst in instances) {
+                var key = (inst.Mesh, inst.Material, inst.TextureOverride);
+                if (!_instanceGroups.TryGetValue(key, out var list)) {
+                    list = new List<InstanceRenderData>();
+                    _instanceGroups[key] = list;
+                }
+                list.Add(inst);
+            }
+
+            // 2. 逐组渲染
+            foreach (var kvp in _instanceGroups) {
+                var (mesh, material, textureOverride) = kvp.Key;
+                var groupInstances = kvp.Value;
+
+                if (mesh == null) continue;
+
+                _currentTextureOverride = textureOverride;
+
+                ModelMaterial effectiveMaterial;
+                if (material != null) {
+                    effectiveMaterial = material;
+                }
+                else if (textureOverride != null) {
+                    effectiveMaterial = textureOverride is RenderTarget2D
+                        ? DefaultDielectricBlendMaterial
+                        : DefaultDielectricMaterial;
+                }
+                else {
+                    effectiveMaterial = null;
+                }
+
+                Shader shader = GetOrCreateInstancedShader(mesh, effectiveMaterial, CurrentContext);
+                if (shader == null) continue;
+
+                shader.PrepareForDrawing();
+                GLWrapper.UseProgram(shader.m_program);
+
+                int programHandle = shader.m_program;
+                if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
+                    glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
+                    _glymulLocationCache[programHandle] = glymulLoc;
+                }
+                if (glymulLoc >= 0) {
+                    float glymul = Display.RenderTarget != null ? -1f : 1f;
+                    GLWrapper.GL.Uniform1(glymulLoc, glymul);
+                }
+
+                UpdateRenderStateUBOForInstancing();
+                UpdateLightsUBO(groupInstances[0].LightIntensity);
+                UpdateMaterialUBOs(effectiveMaterial, false);
+                UpdateUVTransformUBO(effectiveMaterial);
+
+                Model model = groupInstances[0].Model;
+                if (textureOverride != null) {
+                    MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
+                    MaterialTextureBinder.SetTextureSlotUniforms(shader);
+                }
+                else if (model != null && material != null) {
+                    BindMaterialTextures(model, material, shader, null);
+                }
+
+                if (_iblSampler != null && CurrentContext.UseIBL) {
+                    BindIBLTextures();
+                }
+
+                // 分批绘制（每批最多 MaxInstancesPerBatch 个实例）
+                for (int offset = 0; offset < groupInstances.Count; offset += MaxInstancesPerBatch) {
+                    int count = Math.Min(MaxInstancesPerBatch, groupInstances.Count - offset);
+                    for (int i = 0; i < count; i++) {
+                        _instanceMatrices[i] = groupInstances[offset + i].WorldMatrix;
+                    }
+
+                    UploadInstanceData(_instanceMatrices, count);
+                    SetupInstanceAttributes();
+                    SetupDepthState(effectiveMaterial);
+                    SetupCullMode(effectiveMaterial);
+                    SetupBlendMode(effectiveMaterial, CurrentContext);
+                    DrawMeshInstanced(mesh, count);
+                    DisableInstanceAttributes();
+                }
+            }
+
+            _currentTextureOverride = null;
+        }
+
         void BindIBLTextures() {
             MaterialTextureBinder.BindIBLTextures(
                 _iblSampler.LambertianTexture,
@@ -186,9 +278,15 @@ namespace Game {
         }
 
         protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+            return CreateShaderVariantInternal(mesh, material, context, false);
+        }
+
+        Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, in RenderContext context, bool isInstanced) {
             ShaderDefines defines = new();
 
             AddVertexAttributeDefines(defines, mesh);
+
+            if (isInstanced) defines.Add("USE_INSTANCING");
 
             if (material != null) {
                 AddMaterialDefines(defines, material);
@@ -205,7 +303,7 @@ namespace Game {
             if (context.DebugChannel != DebugChannel.None) {
                 defines.AddRaw($"DEBUG {(int)context.DebugChannel}");
             }
-            if (HasSkinningData(mesh)) {
+            if (!isInstanced && HasSkinningData(mesh)) {
                 defines.Add("USE_SKINNING");
             }
 
@@ -223,6 +321,16 @@ namespace Game {
                 Engine.Log.Error($"GltfPbrRenderer: shader compile failed: {ex.Message}");
                 return null;
             }
+        }
+
+        static readonly int InstancedHashSalt = "__INSTANCED__".GetHashCode();
+
+        Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+            int materialHash = ComputeMaterialHash(material) * 31 + InstancedHashSalt;
+            int contextHash = CachedContextHash;
+            Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
+            if (shader != null) return shader;
+            return CreateShaderVariantInternal(mesh, material, context, true);
         }
 
         static void AddVertexAttributeDefines(ShaderDefines defines, ModelMesh mesh) {
