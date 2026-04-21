@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Numerics;
 using Engine;
 using Engine.Graphics;
 using Engine.Media;
 using Shader = Engine.Graphics.Shader;
+using Vector4 = System.Numerics.Vector4;
 
 namespace Game {
     /// <summary>
@@ -13,46 +13,35 @@ namespace Game {
     /// 继承 AdvancedMeshRenderer，添加 PBR 材质 UBO 和 IBL 支持
     /// </summary>
     public class GltfPbrRenderer : AdvancedMeshRenderer {
-        // PBR 材质 UBO（原 PbrMeshRenderer）
-        UniformBuffer<MaterialCoreData> _materialCoreUBO;
-        UniformBuffer<MaterialExtensionData> _materialExtUBO;
-
-        IblSampler _iblSampler;
-        bool _shadersLoaded;
-        readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<InstanceRenderData>> _instanceGroups = new();
-        string _lastDefines;
-        Texture2D _currentTextureOverride;
-
         static readonly ModelMaterial DefaultDielectricMaterial = new() {
-            MetallicFactor = 0f,
-            RoughnessFactor = 1.0f,
-            BaseColorFactor = System.Numerics.Vector4.One
+            MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One
         };
 
         static readonly ModelMaterial DefaultDielectricBlendMaterial = new() {
-            MetallicFactor = 0f,
-            RoughnessFactor = 1.0f,
-            BaseColorFactor = System.Numerics.Vector4.One,
-            AlphaMode = ModelAlphaMode.Mask,
-            AlphaCutoff = 0.01f
+            MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One, AlphaMode = ModelAlphaMode.Mask, AlphaCutoff = 0.01f
         };
 
-        public IblSampler IblSampler => _iblSampler;
+        static readonly int InstancedHashSalt = "__INSTANCED__".GetHashCode();
+        readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<InstanceRenderData>> _instanceGroups = new();
 
-        public GltfPbrRenderer() {
-            _materialCoreUBO = new(1);
-            _materialExtUBO = new(6);
-        }
+        // PBR 材质 UBO（原 PbrMeshRenderer）
+        readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
+        readonly UniformBuffer<MaterialExtensionData> _materialExtUBO = new(6);
+        Texture2D _currentTextureOverride;
+        bool _shadersLoaded;
 
-        public override bool HasIBL => _iblSampler != null;
+        public IblSampler IblSampler { get; private set; }
+
+        public override bool HasIBL => IblSampler != null;
+
+        public Dictionary<SubsystemModelsRenderer.ModelData, CelestialBodyCacheEntry> CelestialBodyCache { get; } = new();
 
         public void LoadEnvironmentMap(Stream hdrStream) {
-            _iblSampler?.Dispose();
-            _iblSampler = new IblSampler();
-
+            IblSampler?.Dispose();
+            IblSampler = new IblSampler();
             EnvironmentMap envMap = EnvironmentMap.LoadHDR(hdrStream);
-            _iblSampler.Process(envMap);
-            MipCount = _iblSampler.MipCount;
+            IblSampler.Process(envMap);
+            MipCount = IblSampler.MipCount;
             envMap.Dispose();
         }
 
@@ -63,11 +52,11 @@ namespace Game {
         }
 
         protected override void LoadShaderSources() {
-            if (_shadersLoaded) return;
-
+            if (_shadersLoaded) {
+                return;
+            }
             string basePath = "GltfModelPbrShaders/pbr/";
             Dictionary<string, string> shaders = new();
-
             AddShader(shaders, basePath, "primitive.vert");
             AddShader(shaders, basePath, "pbr.frag");
             AddShader(shaders, basePath, "ubos.glsl");
@@ -82,11 +71,9 @@ namespace Game {
             AddShader(shaders, basePath, "iridescence.glsl");
             AddShader(shaders, basePath, "specular_glossiness.frag");
             AddShader(shaders, basePath, "scatter.frag");
-
             AddShader(shaders, "GltfModelPbrShaders/", "fullscreen.vert");
             AddShader(shaders, "GltfModelPbrShaders/", "panorama_to_cubemap.frag");
             AddShader(shaders, "GltfModelPbrShaders/", "ibl_filtering.frag");
-
             ShaderCache.LoadShaderSources(shaders, basePath);
             _shadersLoaded = true;
         }
@@ -118,37 +105,33 @@ namespace Game {
             BindUniformBlock(program, "MaterialExtensionData", 6);
         }
 
-        public override void Render(ModelMesh mesh, ModelMaterial material,
+        public override void RenderPart(ModelMesh mesh,
+            ModelMeshPart part,
+            ModelMaterial material,
             SubsystemModelsRenderer.ModelData modelData,
             Texture2D textureOverride,
             JointTexture jointTexture = null) {
-            if (mesh == null) return;
-
+            if (part == null) {
+                return;
+            }
             _currentTextureOverride = textureOverride;
-
             ModelMaterial effectiveMaterial;
             if (material != null) {
                 effectiveMaterial = material;
             }
             else if (textureOverride != null) {
-                effectiveMaterial = textureOverride is RenderTarget2D
-                    ? DefaultDielectricBlendMaterial
-                    : DefaultDielectricMaterial;
+                effectiveMaterial = textureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
             }
             else {
                 effectiveMaterial = null;
             }
-
             Shader shader = GetOrCreateShader(mesh, effectiveMaterial, CurrentContext);
             if (shader == null) {
-                Engine.Log.Error("GltfPbrRenderer: shader is null!");
+                Log.Error("GltfPbrRenderer: shader is null!");
                 return;
             }
-
             shader.PrepareForDrawing();
-
             GLWrapper.UseProgram(shader.m_program);
-
             int programHandle = shader.m_program;
             if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
                 glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
@@ -158,8 +141,6 @@ namespace Game {
                 float glymul = Display.RenderTarget != null ? -1f : 1f;
                 GLWrapper.GL.Uniform1(glymulLoc, glymul);
             }
-
-            // 非 instanced 路径: 设置地形光照和太阳可见性 uniform
             if (!_terrainLightLocCache.TryGetValue(programHandle, out int terrainLightLoc)) {
                 terrainLightLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TerrainLight");
                 _terrainLightLocCache[programHandle] = terrainLightLoc;
@@ -174,11 +155,9 @@ namespace Game {
             if (celestialBodyVisibleLoc >= 0) {
                 GLWrapper.GL.Uniform1(celestialBodyVisibleLoc, GetCelestialBodyVisible(modelData) ? 1f : 0f);
             }
-
             UpdateRenderStateUBO(CurrentContext.Wvp, CurrentContext.CameraView);
             UpdateMaterialUBOs(effectiveMaterial, false);
             UpdateUVTransformUBO(effectiveMaterial);
-
             if (textureOverride != null) {
                 MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
                 MaterialTextureBinder.SetTextureSlotUniforms(shader);
@@ -189,29 +168,31 @@ namespace Game {
                     BindMaterialTextures(model, material, shader, null);
                 }
             }
-
-            if (_iblSampler != null && CurrentContext.UseIBL) {
+            if (IblSampler != null
+                && CurrentContext.UseIBL) {
                 BindIBLTextures();
             }
-
             if (jointTexture != null) {
                 BindJointTexture(jointTexture, shader);
             }
-
             SetupDepthState(effectiveMaterial);
             SetupCullMode(effectiveMaterial);
             SetupBlendMode(effectiveMaterial, CurrentContext);
-            DrawMesh(mesh);
+            GLWrapper.ApplyViewportScissor(Display.Viewport, Display.ScissorRectangle, Display.RasterizerState.ScissorTestEnable);
+            DrawMeshPart(part);
         }
 
         public override void RenderInstances(List<InstanceRenderData> instances) {
-            if (instances == null || instances.Count == 0) return;
+            if (instances == null
+                || instances.Count == 0) {
+                return;
+            }
 
             // 1. 按 (mesh, material, textureOverride) 分组（复用字典）
             _instanceGroups.Clear();
-            foreach (var inst in instances) {
-                var key = (inst.Mesh, inst.Material, inst.TextureOverride);
-                if (!_instanceGroups.TryGetValue(key, out var list)) {
+            foreach (InstanceRenderData inst in instances) {
+                (ModelMesh Mesh, ModelMaterial Material, Texture2D TextureOverride) key = (inst.Mesh, inst.Material, inst.TextureOverride);
+                if (!_instanceGroups.TryGetValue(key, out List<InstanceRenderData> list)) {
                     list = new List<InstanceRenderData>();
                     _instanceGroups[key] = list;
                 }
@@ -219,33 +200,29 @@ namespace Game {
             }
 
             // 2. 逐组渲染
-            foreach (var kvp in _instanceGroups) {
-                var (mesh, material, textureOverride) = kvp.Key;
-                var groupInstances = kvp.Value;
-
-                if (mesh == null) continue;
-
+            foreach (KeyValuePair<(ModelMesh, ModelMaterial, Texture2D), List<InstanceRenderData>> kvp in _instanceGroups) {
+                (ModelMesh mesh, ModelMaterial material, Texture2D textureOverride) = kvp.Key;
+                List<InstanceRenderData> groupInstances = kvp.Value;
+                if (mesh == null) {
+                    continue;
+                }
                 _currentTextureOverride = textureOverride;
-
                 ModelMaterial effectiveMaterial;
                 if (material != null) {
                     effectiveMaterial = material;
                 }
                 else if (textureOverride != null) {
-                    effectiveMaterial = textureOverride is RenderTarget2D
-                        ? DefaultDielectricBlendMaterial
-                        : DefaultDielectricMaterial;
+                    effectiveMaterial = textureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
                 }
                 else {
                     effectiveMaterial = null;
                 }
-
                 Shader shader = GetOrCreateInstancedShader(mesh, effectiveMaterial, CurrentContext);
-                if (shader == null) continue;
-
+                if (shader == null) {
+                    continue;
+                }
                 shader.PrepareForDrawing();
                 GLWrapper.UseProgram(shader.m_program);
-
                 int programHandle = shader.m_program;
                 if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
                     glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
@@ -255,22 +232,21 @@ namespace Game {
                     float glymul = Display.RenderTarget != null ? -1f : 1f;
                     GLWrapper.GL.Uniform1(glymulLoc, glymul);
                 }
-
                 UpdateRenderStateUBOForInstancing();
                 UpdateLightsUBO(1f);
                 UpdateMaterialUBOs(effectiveMaterial, false);
                 UpdateUVTransformUBO(effectiveMaterial);
-
                 Model model = groupInstances[0].ModelData.ComponentModel.Model;
                 if (textureOverride != null) {
                     MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
                     MaterialTextureBinder.SetTextureSlotUniforms(shader);
                 }
-                else if (model != null && material != null) {
+                else if (model != null
+                    && material != null) {
                     BindMaterialTextures(model, material, shader, null);
                 }
-
-                if (_iblSampler != null && CurrentContext.UseIBL) {
+                if (IblSampler != null
+                    && CurrentContext.UseIBL) {
                     BindIBLTextures();
                 }
 
@@ -278,13 +254,10 @@ namespace Game {
                 for (int offset = 0; offset < groupInstances.Count; offset += MaxInstancesPerBatch) {
                     int count = Math.Min(MaxInstancesPerBatch, groupInstances.Count - offset);
                     for (int i = 0; i < count; i++) {
-                        var inst = groupInstances[offset + i];
+                        InstanceRenderData inst = groupInstances[offset + i];
                         _instanceMatrices[i] = inst.WorldMatrix;
-                        _instanceLightData[i] = new Engine.Vector2(
-                            inst.ModelData.Light,
-                            GetCelestialBodyVisible(inst.ModelData) ? 1f : 0f);
+                        _instanceLightData[i] = new Vector2(inst.ModelData.Light, GetCelestialBodyVisible(inst.ModelData) ? 1f : 0f);
                     }
-
                     UploadInstanceData(_instanceMatrices, count);
                     UploadInstanceLightData(_instanceLightData, count);
                     SetupInstanceAttributes();
@@ -295,30 +268,26 @@ namespace Game {
                     DisableInstanceAttributes();
                 }
             }
-
             _currentTextureOverride = null;
         }
 
         void BindIBLTextures() {
             MaterialTextureBinder.BindIBLTextures(
-                _iblSampler.LambertianTexture,
-                _iblSampler.GGXTexture,
-                _iblSampler.SheenTexture,
-                _iblSampler.GGXLut,
-                _iblSampler.CharlieLut
+                IblSampler.LambertianTexture,
+                IblSampler.GGXTexture,
+                IblSampler.SheenTexture,
+                IblSampler.GGXLut,
+                IblSampler.CharlieLut
             );
         }
 
         void UpdateMaterialUBOs(ModelMaterial material, bool useGeneratedTangents) {
             int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
-
             if (LastMaterial != material) {
                 MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, useGeneratedTangents);
                 _materialCoreUBO.Update(ref coreData);
-
                 MaterialExtensionData extData = MaterialUboBuilder.BuildMaterialExtensionData(material);
                 _materialExtUBO.Update(ref extData);
-
                 LastMaterial = material;
                 LastExtensionFlags = extensionFlags;
                 UvTransformDirty = true;
@@ -330,23 +299,24 @@ namespace Game {
             }
         }
 
-        protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
-            return CreateShaderVariantInternal(mesh, material, context, false);
-        }
+        protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) =>
+            CreateShaderVariantInternal(mesh, material, context, false);
 
         Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, in RenderContext context, bool isInstanced) {
             ShaderDefines defines = new();
-
             AddVertexAttributeDefines(defines, mesh);
-
-            if (isInstanced) defines.Add("USE_INSTANCING");
-
+            if (isInstanced) {
+                defines.Add("USE_INSTANCING");
+            }
             if (material != null) {
                 AddMaterialDefines(defines, material);
             }
-
-            if (context.UseIBL) defines.Add("USE_IBL");
-            if (context.LightCount > 0) defines.Add("USE_PUNCTUAL");
+            if (context.UseIBL) {
+                defines.Add("USE_IBL");
+            }
+            if (context.LightCount > 0) {
+                defines.Add("USE_PUNCTUAL");
+            }
             if (context.UseLinearOutput) {
                 defines.Add("LINEAR_OUTPUT");
             }
@@ -356,63 +326,79 @@ namespace Game {
             if (context.DebugChannel != DebugChannel.None) {
                 defines.AddRaw($"DEBUG {(int)context.DebugChannel}");
             }
-            if (!isInstanced && HasSkinningData(mesh)) {
+            if (!isInstanced
+                && HasSkinningData(mesh)) {
                 defines.Add("USE_SKINNING");
             }
-
             ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
             defines.AddRaw($"ALPHAMODE {(int)alphaMode}");
-
-            _lastDefines = defines.ToString();
-
             try {
                 int vertHash = ShaderCache.SelectShader("primitive.vert", defines);
                 int fragHash = ShaderCache.SelectShader("pbr.frag", defines);
                 return ShaderCache.GetShaderProgram(vertHash, fragHash);
             }
             catch (Exception ex) {
-                Engine.Log.Error($"GltfPbrRenderer: shader compile failed: {ex.Message}");
+                Log.Error($"GltfPbrRenderer: shader compile failed: {ex.Message}");
                 return null;
             }
         }
-
-        static readonly int InstancedHashSalt = "__INSTANCED__".GetHashCode();
 
         Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
             int materialHash = ComputeMaterialHash(material) * 31 + InstancedHashSalt;
             int contextHash = CachedContextHash;
             Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
-            if (shader != null) return shader;
+            if (shader != null) {
+                return shader;
+            }
             return CreateShaderVariantInternal(mesh, material, context, true);
         }
 
         static void AddVertexAttributeDefines(ShaderDefines defines, ModelMesh mesh) {
-            if (mesh == null) return;
+            if (mesh == null) {
+                return;
+            }
             HashSet<string> semantics = new();
             foreach (ModelMeshPart part in mesh.MeshParts) {
-                if (part?.VertexBuffer?.VertexDeclaration == null) continue;
+                if (part?.VertexBuffer?.VertexDeclaration == null) {
+                    continue;
+                }
                 foreach (VertexElement element in part.VertexBuffer.VertexDeclaration.VertexElements) {
                     semantics.Add(element.Semantic);
                 }
             }
-            if (semantics.Contains("NORMAL")) defines.Add("HAS_NORMAL_VEC3");
-            if (semantics.Contains("TANGENT")) defines.Add("HAS_TANGENT_VEC4");
-            if (semantics.Contains("TEXCOORD") || semantics.Contains("TEXCOORD0")) defines.Add("HAS_TEXCOORD_0_VEC2");
-            if (semantics.Contains("TEXCOORD1")) defines.Add("HAS_TEXCOORD_1_VEC2");
+            if (semantics.Contains("NORMAL")) {
+                defines.Add("HAS_NORMAL_VEC3");
+            }
+            if (semantics.Contains("TANGENT")) {
+                defines.Add("HAS_TANGENT_VEC4");
+            }
+            if (semantics.Contains("TEXCOORD")
+                || semantics.Contains("TEXCOORD0")) {
+                defines.Add("HAS_TEXCOORD_0_VEC2");
+            }
+            if (semantics.Contains("TEXCOORD1")) {
+                defines.Add("HAS_TEXCOORD_1_VEC2");
+            }
             if (semantics.Contains("COLOR")) {
                 defines.Add("HAS_COLOR_0_VEC4");
             }
-            if (semantics.Contains("BLENDINDICES")) defines.Add("HAS_JOINTS_0_VEC4");
-            if (semantics.Contains("BLENDWEIGHTS")) defines.Add("HAS_WEIGHTS_0_VEC4");
+            if (semantics.Contains("BLENDINDICES")) {
+                defines.Add("HAS_JOINTS_0_VEC4");
+            }
+            if (semantics.Contains("BLENDWEIGHTS")) {
+                defines.Add("HAS_WEIGHTS_0_VEC4");
+            }
         }
 
         static bool HasSkinningData(ModelMesh mesh) {
-            if (mesh == null) return false;
+            if (mesh == null) {
+                return false;
+            }
             foreach (ModelMeshPart part in mesh.MeshParts) {
                 if (part?.VertexBuffer?.VertexDeclaration != null) {
                     foreach (VertexElement element in part.VertexBuffer.VertexDeclaration.VertexElements) {
-                        if (element.Semantic == "BLENDINDICES" ||
-                            element.Semantic == "BLENDWEIGHTS") {
+                        if (element.Semantic == "BLENDINDICES"
+                            || element.Semantic == "BLENDWEIGHTS") {
                             return true;
                         }
                     }
@@ -423,21 +409,49 @@ namespace Game {
 
         void AddMaterialDefines(ShaderDefines defines, ModelMaterial material) {
             defines.Add("MATERIAL_METALLICROUGHNESS");
-
-            if (material.BaseColorTexture?.HasTexture == true || _currentTextureOverride != null) defines.Add("HAS_BASE_COLOR_MAP");
-            if (material.MetallicRoughnessTexture?.HasTexture == true) defines.Add("HAS_METALLIC_ROUGHNESS_MAP");
-            if (material.NormalTexture?.HasTexture == true) defines.Add("HAS_NORMAL_MAP");
-            if (material.OcclusionTexture?.HasTexture == true) defines.Add("HAS_OCCLUSION_MAP");
-            if (material.EmissiveTexture?.HasTexture == true) defines.Add("HAS_EMISSIVE_MAP");
-            if (material.ClearCoat?.IsEnabled == true) defines.Add("MATERIAL_CLEARCOAT");
-            if (material.Sheen?.IsEnabled == true) defines.Add("MATERIAL_SHEEN");
-            if (material.Transmission?.IsEnabled == true) defines.Add("MATERIAL_TRANSMISSION");
-            if (material.Volume?.IsEnabled == true) defines.Add("MATERIAL_VOLUME");
-            if (material.Iridescence?.IsEnabled == true) defines.Add("MATERIAL_IRIDESCENCE");
-            if (material.Specular?.IsEnabled == true) defines.Add("MATERIAL_SPECULAR");
-            if (material.Anisotropy?.IsEnabled == true) defines.Add("MATERIAL_ANISOTROPY");
-            if (material.DiffuseTransmission?.IsEnabled == true) defines.Add("MATERIAL_DIFFUSE_TRANSMISSION");
-            if (material.SpecularGlossiness?.IsEnabled == true) defines.Add("MATERIAL_SPECULAR_GLOSSINESS");
+            if (material.BaseColorTexture?.HasTexture == true
+                || _currentTextureOverride != null) {
+                defines.Add("HAS_BASE_COLOR_MAP");
+            }
+            if (material.MetallicRoughnessTexture?.HasTexture == true) {
+                defines.Add("HAS_METALLIC_ROUGHNESS_MAP");
+            }
+            if (material.NormalTexture?.HasTexture == true) {
+                defines.Add("HAS_NORMAL_MAP");
+            }
+            if (material.OcclusionTexture?.HasTexture == true) {
+                defines.Add("HAS_OCCLUSION_MAP");
+            }
+            if (material.EmissiveTexture?.HasTexture == true) {
+                defines.Add("HAS_EMISSIVE_MAP");
+            }
+            if (material.ClearCoat?.IsEnabled == true) {
+                defines.Add("MATERIAL_CLEARCOAT");
+            }
+            if (material.Sheen?.IsEnabled == true) {
+                defines.Add("MATERIAL_SHEEN");
+            }
+            if (material.Transmission?.IsEnabled == true) {
+                defines.Add("MATERIAL_TRANSMISSION");
+            }
+            if (material.Volume?.IsEnabled == true) {
+                defines.Add("MATERIAL_VOLUME");
+            }
+            if (material.Iridescence?.IsEnabled == true) {
+                defines.Add("MATERIAL_IRIDESCENCE");
+            }
+            if (material.Specular?.IsEnabled == true) {
+                defines.Add("MATERIAL_SPECULAR");
+            }
+            if (material.Anisotropy?.IsEnabled == true) {
+                defines.Add("MATERIAL_ANISOTROPY");
+            }
+            if (material.DiffuseTransmission?.IsEnabled == true) {
+                defines.Add("MATERIAL_DIFFUSE_TRANSMISSION");
+            }
+            if (material.SpecularGlossiness?.IsEnabled == true) {
+                defines.Add("MATERIAL_SPECULAR_GLOSSINESS");
+            }
         }
 
         protected override int ComputeMaterialHash(ModelMaterial material) {
@@ -457,11 +471,52 @@ namespace Game {
             }
         }
 
+        bool GetCelestialBodyVisible(SubsystemModelsRenderer.ModelData modelData) {
+            double now = Time.FrameStartTime;
+            if (CelestialBodyCache.TryGetValue(modelData, out CelestialBodyCacheEntry entry)
+                && now - entry.Timestamp < 0.1) {
+                return entry.Visible;
+            }
+            bool visible = CalculateCelestialBodyVisibility(modelData);
+            CelestialBodyCache[modelData] = new CelestialBodyCacheEntry { Visible = visible, Timestamp = now };
+            return visible;
+        }
+
+        bool CalculateCelestialBodyVisibility(SubsystemModelsRenderer.ModelData modelData) {
+            Vector3 dir = new(-ActiveLightDirection.X, -ActiveLightDirection.Y, -ActiveLightDirection.Z);
+            if (dir.Y < 0f) {
+                return false;
+            }
+            Vector3 p;
+            if (modelData.ComponentBody != null) {
+                p = modelData.ComponentBody.Position;
+                p.Y += 0.95f * (modelData.ComponentBody.BoundingBox.Max.Y - modelData.ComponentBody.BoundingBox.Min.Y);
+            }
+            else {
+                Matrix? boneTransform = modelData.ComponentModel.GetBoneTransform(modelData.ComponentModel.Model.RootBone.Index);
+                p = !boneTransform.HasValue ? Vector3.Zero : boneTransform.Value.Translation + new Vector3(0f, 0.9f, 0f);
+            }
+            int cellX = Terrain.ToCell(p.X);
+            int cellZ = Terrain.ToCell(p.Z);
+            int topHeight = _subsystemTerrain.Terrain.CalculateTopmostCellHeight(cellX, cellZ);
+            float maxDist = p.Y >= topHeight ? 16f : 32f;
+            Vector3 end = p + dir * maxDist;
+            TerrainRaycastResult? result = _subsystemTerrain.Raycast(p, end, false, true, null);
+            return !result.HasValue;
+        }
+
         public override void Dispose() {
-            _iblSampler?.Dispose();
+            IblSampler?.Dispose();
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
+            CelestialBodyCache.Clear();
             base.Dispose();
+        }
+
+        // 天体可见性缓存（懒计算，0.1s 节流）
+        public struct CelestialBodyCacheEntry {
+            public bool Visible;
+            public double Timestamp;
         }
     }
 }

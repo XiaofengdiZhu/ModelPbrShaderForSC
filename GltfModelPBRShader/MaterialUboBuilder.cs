@@ -18,7 +18,8 @@ namespace Game {
                 BaseColorFactor = useSG ? material.SpecularGlossiness.DiffuseFactor : material?.BaseColorFactor ?? Vector4.One,
                 EmissiveFactor = new Vector4(material?.EmissiveFactor ?? Vector3.Zero, 0f),
                 MetallicFactor = useSG ? 0f : material?.MetallicFactor ?? MaterialDefaults.MetallicFactor,
-                RoughnessFactor = useSG ? 1f - material.SpecularGlossiness.GlossinessFactor : material?.RoughnessFactor ?? MaterialDefaults.RoughnessFactor,
+                RoughnessFactor =
+                    useSG ? 1f - material.SpecularGlossiness.GlossinessFactor : material?.RoughnessFactor ?? MaterialDefaults.RoughnessFactor,
                 NormalScale = material?.NormalScale ?? MaterialDefaults.NormalScale,
                 OcclusionStrength = material?.OcclusionStrength ?? MaterialDefaults.OcclusionStrength,
 
@@ -114,9 +115,10 @@ namespace Game {
                 DispersionPadding2 = 0f,
 
                 // Diffuse Transmission
-                DiffuseTransmissionFactor = material?.DiffuseTransmission?.IsEnabled == true
-                    ? material.DiffuseTransmission.Factor
-                    : MaterialDefaults.DiffuseTransmissionFactor,
+                DiffuseTransmissionFactor =
+                    material?.DiffuseTransmission?.IsEnabled == true
+                        ? material.DiffuseTransmission.Factor
+                        : MaterialDefaults.DiffuseTransmissionFactor,
                 DiffuseTransmissionPadding0 = 0f,
                 DiffuseTransmissionPadding1 = 0f,
                 DiffuseTransmissionPadding2 = 0f,
@@ -190,20 +192,48 @@ namespace Game {
                 return ExtensionFlags.MetallicRoughness;
             }
             ExtensionFlags flags = ExtensionFlags.MetallicRoughness;
-            if (material.ClearCoat?.IsEnabled == true) flags |= ExtensionFlags.ClearCoat;
-            if (material.Iridescence?.IsEnabled == true) flags |= ExtensionFlags.Iridescence;
-            if (material.Transmission?.IsEnabled == true) flags |= ExtensionFlags.Transmission;
-            if (material.Volume?.IsEnabled == true) flags |= ExtensionFlags.Volume;
-            if (material.Sheen?.IsEnabled == true) flags |= ExtensionFlags.Sheen;
-            if (material.Specular?.IsEnabled == true) flags |= ExtensionFlags.Specular;
-            if (material.Ior?.IsEnabled == true) flags |= ExtensionFlags.Ior;
-            if (material.EmissiveStrength?.IsEnabled == true) flags |= ExtensionFlags.EmissiveStrength;
-            if (material.Dispersion?.IsEnabled == true) flags |= ExtensionFlags.Dispersion;
-            if (material.Anisotropy?.IsEnabled == true) flags |= ExtensionFlags.Anisotropy;
-            if (material.DiffuseTransmission?.IsEnabled == true) flags |= ExtensionFlags.DiffuseTransmission;
-            if (material.VolumeScatter?.IsEnabled == true) flags |= ExtensionFlags.VolumeScatter;
-            if (material.Unlit?.IsEnabled == true) flags |= ExtensionFlags.Unlit;
-            if (material.SpecularGlossiness?.IsEnabled == true) flags |= ExtensionFlags.SpecularGlossiness;
+            if (material.ClearCoat?.IsEnabled == true) {
+                flags |= ExtensionFlags.ClearCoat;
+            }
+            if (material.Iridescence?.IsEnabled == true) {
+                flags |= ExtensionFlags.Iridescence;
+            }
+            if (material.Transmission?.IsEnabled == true) {
+                flags |= ExtensionFlags.Transmission;
+            }
+            if (material.Volume?.IsEnabled == true) {
+                flags |= ExtensionFlags.Volume;
+            }
+            if (material.Sheen?.IsEnabled == true) {
+                flags |= ExtensionFlags.Sheen;
+            }
+            if (material.Specular?.IsEnabled == true) {
+                flags |= ExtensionFlags.Specular;
+            }
+            if (material.Ior?.IsEnabled == true) {
+                flags |= ExtensionFlags.Ior;
+            }
+            if (material.EmissiveStrength?.IsEnabled == true) {
+                flags |= ExtensionFlags.EmissiveStrength;
+            }
+            if (material.Dispersion?.IsEnabled == true) {
+                flags |= ExtensionFlags.Dispersion;
+            }
+            if (material.Anisotropy?.IsEnabled == true) {
+                flags |= ExtensionFlags.Anisotropy;
+            }
+            if (material.DiffuseTransmission?.IsEnabled == true) {
+                flags |= ExtensionFlags.DiffuseTransmission;
+            }
+            if (material.VolumeScatter?.IsEnabled == true) {
+                flags |= ExtensionFlags.VolumeScatter;
+            }
+            if (material.Unlit?.IsEnabled == true) {
+                flags |= ExtensionFlags.Unlit;
+            }
+            if (material.SpecularGlossiness?.IsEnabled == true) {
+                flags |= ExtensionFlags.SpecularGlossiness;
+            }
             return flags;
         }
 
@@ -215,41 +245,75 @@ namespace Game {
                 return TextureFlags.None;
             }
             TextureFlags flags = TextureFlags.None;
-            if (material.BaseColorTexture != null) flags |= TextureFlags.BaseColor;
-            if (material.MetallicRoughnessTexture != null) flags |= TextureFlags.MetallicRoughness;
-            if (material.NormalTexture != null) flags |= TextureFlags.Normal;
-            if (material.OcclusionTexture != null) flags |= TextureFlags.Occlusion;
-            if (material.EmissiveTexture != null) flags |= TextureFlags.Emissive;
-
+            if (material.BaseColorTexture != null) {
+                flags |= TextureFlags.BaseColor;
+            }
+            if (material.MetallicRoughnessTexture != null) {
+                flags |= TextureFlags.MetallicRoughness;
+            }
+            if (material.NormalTexture != null) {
+                flags |= TextureFlags.Normal;
+            }
+            if (material.OcclusionTexture != null) {
+                flags |= TextureFlags.Occlusion;
+            }
+            if (material.EmissiveTexture != null) {
+                flags |= TextureFlags.Emissive;
+            }
             if (material.ClearCoat?.IsEnabled == true) {
-                if (material.ClearCoat.Texture != null) flags |= TextureFlags.ClearCoat;
-                if (material.ClearCoat.RoughnessTexture != null) flags |= TextureFlags.ClearCoatRoughness;
-                if (material.ClearCoat.NormalTexture != null) flags |= TextureFlags.ClearCoatNormal;
+                if (material.ClearCoat.Texture != null) {
+                    flags |= TextureFlags.ClearCoat;
+                }
+                if (material.ClearCoat.RoughnessTexture != null) {
+                    flags |= TextureFlags.ClearCoatRoughness;
+                }
+                if (material.ClearCoat.NormalTexture != null) {
+                    flags |= TextureFlags.ClearCoatNormal;
+                }
             }
             if (material.Iridescence?.IsEnabled == true) {
-                if (material.Iridescence.Texture != null) flags |= TextureFlags.Iridescence;
-                if (material.Iridescence.ThicknessTexture != null) flags |= TextureFlags.IridescenceThickness;
+                if (material.Iridescence.Texture != null) {
+                    flags |= TextureFlags.Iridescence;
+                }
+                if (material.Iridescence.ThicknessTexture != null) {
+                    flags |= TextureFlags.IridescenceThickness;
+                }
             }
-            if (material.Transmission?.IsEnabled == true && material.Transmission.Texture != null) {
+            if (material.Transmission?.IsEnabled == true
+                && material.Transmission.Texture != null) {
                 flags |= TextureFlags.Transmission;
             }
-            if (material.Volume?.IsEnabled == true && material.Volume.ThicknessTexture != null) {
+            if (material.Volume?.IsEnabled == true
+                && material.Volume.ThicknessTexture != null) {
                 flags |= TextureFlags.Thickness;
             }
             if (material.Sheen?.IsEnabled == true) {
-                if (material.Sheen.ColorTexture != null) flags |= TextureFlags.SheenColor;
-                if (material.Sheen.RoughnessTexture != null) flags |= TextureFlags.SheenRoughness;
+                if (material.Sheen.ColorTexture != null) {
+                    flags |= TextureFlags.SheenColor;
+                }
+                if (material.Sheen.RoughnessTexture != null) {
+                    flags |= TextureFlags.SheenRoughness;
+                }
             }
             if (material.Specular?.IsEnabled == true) {
-                if (material.Specular.SpecularTexture != null) flags |= TextureFlags.Specular;
-                if (material.Specular.SpecularColorTexture != null) flags |= TextureFlags.SpecularColor;
+                if (material.Specular.SpecularTexture != null) {
+                    flags |= TextureFlags.Specular;
+                }
+                if (material.Specular.SpecularColorTexture != null) {
+                    flags |= TextureFlags.SpecularColor;
+                }
             }
-            if (material.Anisotropy?.IsEnabled == true && material.Anisotropy.AnisotropyTexture != null) {
+            if (material.Anisotropy?.IsEnabled == true
+                && material.Anisotropy.AnisotropyTexture != null) {
                 flags |= TextureFlags.Anisotropy;
             }
             if (material.DiffuseTransmission?.IsEnabled == true) {
-                if (material.DiffuseTransmission.Texture != null) flags |= TextureFlags.DiffuseTransmission;
-                if (material.DiffuseTransmission.ColorTexture != null) flags |= TextureFlags.DiffuseTransmissionColor;
+                if (material.DiffuseTransmission.Texture != null) {
+                    flags |= TextureFlags.DiffuseTransmission;
+                }
+                if (material.DiffuseTransmission.ColorTexture != null) {
+                    flags |= TextureFlags.DiffuseTransmissionColor;
+                }
             }
             return flags;
         }
@@ -321,7 +385,6 @@ namespace Game {
             if (material.Anisotropy?.IsEnabled == true) {
                 data.AnisotropyUVTransform = BuildUVMatrix(material.Anisotropy.AnisotropyTexture);
             }
-
             return data;
         }
 
@@ -331,11 +394,7 @@ namespace Game {
             }
             // 从 Matrix3x2 转换为 UVMatrix3
             Matrix3x2 m = texture.UVTransform;
-            return new UVMatrix3(
-                new Vector4(m.M11, m.M12, 0f, 0f),
-                new Vector4(m.M21, m.M22, 0f, 0f),
-                new Vector4(m.M31, m.M32, 1f, 0f)
-            );
+            return new UVMatrix3(new Vector4(m.M11, m.M12, 0f, 0f), new Vector4(m.M21, m.M22, 0f, 0f), new Vector4(m.M31, m.M32, 1f, 0f));
         }
     }
 }

@@ -1,10 +1,7 @@
 using System;
 using System.IO;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
-using Engine;
-using Engine.Graphics;
 using Vector3 = Engine.Vector3;
 
 namespace Game {
@@ -22,7 +19,6 @@ namespace Game {
         /// </summary>
         public static EnvironmentMap LoadHDR(Stream stream) {
             using BinaryReader reader = new(stream, Encoding.ASCII, true);
-
             HdrHeader header = ParseHeader(reader);
             float[] data = ReadRleRgbe(reader, header.Width, header.Height);
             return new EnvironmentMap { Width = header.Width, Height = header.Height, DataFloat = data, Exposure = header.Exposure };
@@ -39,49 +35,47 @@ namespace Game {
 
         static HdrHeader ParseHeader(BinaryReader reader) {
             HdrHeader header = new() { Exposure = 1.0f, Format = "32-bit_rle_rgbe" };
-
             string line;
             bool foundFormat = false;
             while ((line = ReadLine(reader)) != null) {
                 if (string.IsNullOrEmpty(line)) {
                     break;
                 }
-
                 if (line.StartsWith("FORMAT=", StringComparison.OrdinalIgnoreCase)) {
                     header.Format = line.Substring(7).Trim();
                     foundFormat = true;
                 }
-
                 if (line.StartsWith("EXPOSURE=", StringComparison.OrdinalIgnoreCase)) {
                     if (float.TryParse(line.Substring(9).Trim(), out float exp)) {
                         header.Exposure = exp;
                     }
                 }
             }
-
-            if (!foundFormat || !header.Format.Contains("32-bit_rle_rgbe", StringComparison.OrdinalIgnoreCase)) {
+            if (!foundFormat
+                || !header.Format.Contains("32-bit_rle_rgbe", StringComparison.OrdinalIgnoreCase)) {
                 throw new NotSupportedException("Only 32-bit RLE RGBE format is supported");
             }
-
             line = ReadLine(reader);
             if (string.IsNullOrEmpty(line)) {
                 throw new InvalidDataException("Missing resolution specifier");
             }
-
             string[] parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 4) {
                 throw new InvalidDataException($"Invalid resolution specifier: {line}");
             }
-
             for (int i = 0; i < parts.Length - 1; i++) {
-                if (parts[i].Equals("-Y", StringComparison.OrdinalIgnoreCase) || parts[i].Equals("Y", StringComparison.OrdinalIgnoreCase)) {
+                if (parts[i].Equals("-Y", StringComparison.OrdinalIgnoreCase)
+                    || parts[i].Equals("Y", StringComparison.OrdinalIgnoreCase)) {
                     header.Height = int.Parse(parts[i + 1]);
                 }
-                if (parts[i].Equals("+X", StringComparison.OrdinalIgnoreCase) || parts[i].Equals("-X", StringComparison.OrdinalIgnoreCase) || parts[i].Equals("X", StringComparison.OrdinalIgnoreCase)) {
+                if (parts[i].Equals("+X", StringComparison.OrdinalIgnoreCase)
+                    || parts[i].Equals("-X", StringComparison.OrdinalIgnoreCase)
+                    || parts[i].Equals("X", StringComparison.OrdinalIgnoreCase)) {
                     header.Width = int.Parse(parts[i + 1]);
                 }
             }
-            if (header.Width <= 0 || header.Height <= 0) {
+            if (header.Width <= 0
+                || header.Height <= 0) {
                 throw new InvalidDataException($"Invalid dimensions: {header.Width}x{header.Height}");
             }
             return header;
@@ -90,7 +84,8 @@ namespace Game {
         static string ReadLine(BinaryReader reader) {
             StringBuilder sb = new();
             int b;
-            while ((b = reader.ReadByte()) != -1 && b != '\n') {
+            while ((b = reader.ReadByte()) != -1
+                && b != '\n') {
                 if (b != '\r') {
                     sb.Append((char)b);
                 }
@@ -106,13 +101,13 @@ namespace Game {
                 int g = reader.ReadByte();
                 int b = reader.ReadByte();
                 int e = reader.ReadByte();
-
-                if (r == 2 && g == 2 && (b & 0x80) == 0) {
+                if (r == 2
+                    && g == 2
+                    && (b & 0x80) == 0) {
                     int scanWidth = (b << 8) | e;
                     if (scanWidth != width) {
                         throw new InvalidDataException($"Scanline width mismatch: expected {width}, got {scanWidth}");
                     }
-
                     for (int channel = 0; channel < 4; channel++) {
                         int pos = 0;
                         while (pos < width) {
@@ -141,7 +136,6 @@ namespace Game {
                         reader.Read(scanline, 4, (width - 1) * 4);
                     }
                 }
-
                 for (int x = 0; x < width; x++) {
                     int srcIdx = x * 4;
                     int dstIdx = (y * width + x) * 3;
@@ -175,7 +169,6 @@ namespace Game {
             float y = v * Height;
             int x0 = (int)MathF.Floor(x);
             int y0 = (int)MathF.Floor(y);
-
             float fx = x - x0;
             float fy = y - y0;
             int x1 = (x0 + 1) % Width;

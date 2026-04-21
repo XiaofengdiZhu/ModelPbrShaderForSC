@@ -81,10 +81,7 @@ namespace Game {
         /// 创建默认渲染上下文
         /// </summary>
         public static RenderContext Default => new() {
-            UseIBL = true,
-            ToneMapMode = ToneMapMode.KhrPbrNeutral,
-            EnableSkinning = true,
-            EnableMorphing = true
+            UseIBL = true, ToneMapMode = ToneMapMode.KhrPbrNeutral, EnableSkinning = true, EnableMorphing = true
         };
 
         /// <summary>

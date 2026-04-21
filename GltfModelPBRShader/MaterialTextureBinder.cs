@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using Engine.Graphics;
 using Engine.Media;
-using Shader = Engine.Graphics.Shader;
 using Silk.NET.OpenGLES;
+using Shader = Engine.Graphics.Shader;
 
 namespace Game {
     /// <summary>
@@ -23,7 +23,7 @@ namespace Game {
         /// 纹理槽位 uniform 映射
         /// (槽位, 纹理 uniform 名称, 采样器 uniform 名称)
         /// </summary>
-        static readonly (MaterialTextureSlot slot, string texUniform, string samplerUniform)[] SlotUniforms = {
+        static readonly (MaterialTextureSlot slot, string texUniform, string samplerUniform)[] SlotUniforms = [
             // Core PBR textures
             (MaterialTextureSlot.BaseColor, "u_BaseColorTexture", "u_BaseColorSampler"),
             (MaterialTextureSlot.MetallicRoughness, "u_MetallicRoughnessTexture", "u_MetallicRoughnessSampler"),
@@ -70,8 +70,8 @@ namespace Game {
             (MaterialTextureSlot.IBLGGX, "u_GGXEnvTexture", "u_GGXEnvSampler"),
             (MaterialTextureSlot.IBLCharlie, "u_CharlieEnvTexture", "u_CharlieEnvSampler"),
             (MaterialTextureSlot.IBLGGXLUT, "u_GGXLUT", "u_GGXLUTSampler"),
-            (MaterialTextureSlot.IBLCharlieLUT, "u_CharlieLUT", "u_CharlieLUTSampler"),
-        };
+            (MaterialTextureSlot.IBLCharlieLUT, "u_CharlieLUT", "u_CharlieLUTSampler")
+        ];
 
         /// <summary>
         /// 设置纹理槽位 uniform（不存在的槽位静默跳过）
@@ -79,7 +79,7 @@ namespace Game {
         /// </summary>
         public static void SetTextureSlotUniforms(Shader shader) {
             uint program = (uint)shader.m_program;
-            foreach (var (slot, texUniform, samplerUniform) in SlotUniforms) {
+            foreach ((MaterialTextureSlot slot, string texUniform, string samplerUniform) in SlotUniforms) {
                 int slotValue = (int)slot;
                 // 使用原始 GL 调用设置纹理槽位（兼容 sampler2D、samplerCube 等所有类型）
                 int texLoc = GLWrapper.GL.GetUniformLocation(program, texUniform);
@@ -151,7 +151,8 @@ namespace Game {
                 return;
             }
             int index = matTex.TextureIndex;
-            if (index < 0 || index >= textures.Length) {
+            if (index < 0
+                || index >= textures.Length) {
                 return;
             }
             Texture2D texture = textures[index];
@@ -179,16 +180,15 @@ namespace Game {
             SamplerState sampler = texture.SamplerState;
 
             // 跳过已应用相同 sampler 的纹理
-            if (_appliedSamplers.TryGetValue(handle, out SamplerState cached) && cached == sampler) {
+            if (_appliedSamplers.TryGetValue(handle, out SamplerState cached)
+                && cached == sampler) {
                 return;
             }
             _appliedSamplers[handle] = sampler;
-
             bool hasMipmap = texture.MipLevelsCount > 1;
             TextureMinFilter minFilter;
             TextureMagFilter magFilter;
             TextureWrapMode wrapS, wrapT;
-
             if (sampler != null) {
                 minFilter = GLWrapper.TranslateTextureFilterModeMin(sampler.FilterMode, hasMipmap);
                 magFilter = GLWrapper.TranslateTextureFilterModeMag(sampler.FilterMode);
@@ -201,7 +201,6 @@ namespace Game {
                 wrapS = TextureWrapMode.Repeat;
                 wrapT = TextureWrapMode.Repeat;
             }
-
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)minFilter);
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)magFilter);
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)wrapS);
@@ -220,12 +219,7 @@ namespace Game {
         /// <summary>
         /// 绑定 IBL 纹理（用于 PBR 渲染）
         /// </summary>
-        public static void BindIBLTextures(
-            uint lambertianTexture,
-            uint ggxTexture,
-            uint charlieTexture,
-            uint ggxLut,
-            uint charlieLut) {
+        public static void BindIBLTextures(uint lambertianTexture, uint ggxTexture, uint charlieTexture, uint ggxLut, uint charlieLut) {
             BindTextureHandle(lambertianTexture, TextureTarget.TextureCubeMap, MaterialTextureSlot.IBLLambertian);
             BindTextureHandle(ggxTexture, TextureTarget.TextureCubeMap, MaterialTextureSlot.IBLGGX);
             BindTextureHandle(charlieTexture, TextureTarget.TextureCubeMap, MaterialTextureSlot.IBLCharlie);
