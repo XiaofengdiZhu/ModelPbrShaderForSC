@@ -10,9 +10,13 @@ using Shader = Engine.Graphics.Shader;
 namespace Game {
     /// <summary>
     /// glTF PBR 渲染器
-    /// 继承 PbrMeshRenderer，添加 IBL 支持
+    /// 继承 AdvancedMeshRenderer，添加 PBR 材质 UBO 和 IBL 支持
     /// </summary>
-    public class GltfPbrRenderer : PbrMeshRenderer {
+    public class GltfPbrRenderer : AdvancedMeshRenderer {
+        // PBR 材质 UBO（原 PbrMeshRenderer）
+        UniformBuffer<MaterialCoreData> _materialCoreUBO;
+        UniformBuffer<MaterialExtensionData> _materialExtUBO;
+
         IblSampler _iblSampler;
         bool _shadersLoaded;
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<InstanceRenderData>> _instanceGroups = new();
@@ -34,6 +38,11 @@ namespace Game {
         };
 
         public IblSampler IblSampler => _iblSampler;
+
+        public GltfPbrRenderer() {
+            _materialCoreUBO = new(1);
+            _materialExtUBO = new(6);
+        }
 
         public override bool HasIBL => _iblSampler != null;
 
@@ -271,7 +280,7 @@ namespace Game {
                         _instanceMatrices[i] = groupInstances[offset + i].WorldMatrix;
                         _instanceLightData[i] = new System.Numerics.Vector2(
                             groupInstances[offset + i].LightIntensity,
-                            groupInstances[offset + i].SunVisible);
+                            groupInstances[offset + i].CelestialBodyVisible);
                     }
 
                     UploadInstanceData(_instanceMatrices, count);
@@ -296,6 +305,27 @@ namespace Game {
                 _iblSampler.GGXLut,
                 _iblSampler.CharlieLut
             );
+        }
+
+        void UpdateMaterialUBOs(ModelMaterial material, bool useGeneratedTangents) {
+            int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
+
+            if (LastMaterial != material) {
+                MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, useGeneratedTangents);
+                _materialCoreUBO.Update(ref coreData);
+
+                MaterialExtensionData extData = MaterialUboBuilder.BuildMaterialExtensionData(material);
+                _materialExtUBO.Update(ref extData);
+
+                LastMaterial = material;
+                LastExtensionFlags = extensionFlags;
+                UvTransformDirty = true;
+            }
+            else if (LastExtensionFlags != extensionFlags) {
+                MaterialExtensionData extData = MaterialUboBuilder.BuildMaterialExtensionData(material);
+                _materialExtUBO.Update(ref extData);
+                LastExtensionFlags = extensionFlags;
+            }
         }
 
         protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
@@ -427,6 +457,8 @@ namespace Game {
 
         public override void Dispose() {
             _iblSampler?.Dispose();
+            _materialCoreUBO?.Dispose();
+            _materialExtUBO?.Dispose();
             base.Dispose();
         }
     }

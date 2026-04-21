@@ -22,7 +22,7 @@ namespace Game {
     /// - SetupShaderCallbacks(): 设置 Attribute/UBO 绑定回调
     /// - CreateShaderVariant(): 构建着色器变体
     /// </remarks>
-    public abstract class AdvancedMeshRenderer : IDisposable, ICustomModelRenderer {
+    public abstract class AdvancedMeshRenderer : ICustomModelRenderer {
         // 通用 UBO 实例（基类管理）
         protected UniformBuffer<SceneData> SceneUBO;
         protected UniformBuffer<LightsData> LightsUBO;
@@ -59,7 +59,6 @@ namespace Game {
         protected const int MaxInstancesPerBatch = 256;
         protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
         protected System.Numerics.Vector2[] _instanceLightData = new System.Numerics.Vector2[MaxInstancesPerBatch];
-        Engine.Matrix _cachedEngineProjection;
 
         // Uniform location 缓存
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
@@ -212,7 +211,6 @@ namespace Game {
             UpdateContextHash(CurrentContext);
 
             CurrentViewProjection = CurrentContext.View * CurrentContext.Projection;
-            _cachedEngineProjection = camera.ProjectionMatrix;
 
             // 更新 SceneData UBO
             // SC 引擎的 ModelMatrix 含 ViewMatrix（AbsoluteBoneTransformsForCamera），
@@ -249,100 +247,17 @@ namespace Game {
         /// </summary>
         protected const int JointTextureSlot = 31;
 
-        /// <summary>
-        /// 渲染网格
-        /// </summary>
-        public virtual void Render(ModelMesh mesh, ModelMaterial material, Matrix wvpMatrixEngine, Matrix worldMatrixEngine, Model model, float lightIntensity, float sunVisible, Texture2D textureOverride, JointTexture jointTexture = null) {
-            Matrix4x4 wvpMatrix = wvpMatrixEngine;
-            Matrix4x4 worldMatrix = worldMatrixEngine;
-            if (mesh == null) return;
+        public abstract void Render(ModelMesh mesh,
+            ModelMaterial material,
+            Matrix wvpMatrixEngine,
+            Matrix worldMatrixEngine,
+            Model model,
+            float lightIntensity,
+            float sunVisible,
+            Texture2D textureOverride,
+            JointTexture jointTexture = null);
 
-            // 获取或创建着色器
-            Shader shader = GetOrCreateShader(mesh, material, CurrentContext);
-            if (shader == null) {
-                Engine.Log.Error("AdvancedMeshRenderer.Render: shader is null, skipping draw");
-                return;
-            }
-
-            shader.PrepareForDrawing();
-
-            // 绑定着色器程序（通过 GLWrapper 封装以保持缓存同步）
-            GLWrapper.UseProgram(shader.m_program);
-
-            // 上传 u_glymul uniform（缓存 location 避免每帧查询）
-            int programHandle = shader.m_program;
-            if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
-                glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
-                _glymulLocationCache[programHandle] = glymulLoc;
-            }
-            if (glymulLoc >= 0) {
-                float glymul = Display.RenderTarget != null ? -1f : 1f;
-                GLWrapper.GL.Uniform1(glymulLoc, glymul);
-            }
-
-            // 设置 per-model 地形光照 uniform（非实例化路径）
-            if (!_terrainLightLocCache.TryGetValue(programHandle, out int terrainLightLoc)) {
-                terrainLightLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TerrainLight");
-                _terrainLightLocCache[programHandle] = terrainLightLoc;
-            }
-            if (terrainLightLoc >= 0) {
-                GLWrapper.GL.Uniform1(terrainLightLoc, lightIntensity);
-            }
-
-            // 设置 per-model 太阳可见性 uniform（非实例化路径）
-            if (!_sunVisibleLocCache.TryGetValue(programHandle, out int sunVisibleLoc)) {
-                sunVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_SunVisible");
-                _sunVisibleLocCache[programHandle] = sunVisibleLoc;
-            }
-            if (sunVisibleLoc >= 0) {
-                GLWrapper.GL.Uniform1(sunVisibleLoc, sunVisible);
-            }
-
-            // 更新 RenderState UBO
-            UpdateRenderStateUBO(wvpMatrix, worldMatrix);
-
-            // 更新光照 UBO（per-model 缩放已通过 u_TerrainLight/u_SunVisible uniform 处理）
-            UpdateLightsUBO(1f);
-
-            // 更新 UV 变换 UBO
-            UpdateUVTransformUBO(material);
-
-            // 绑定纹理
-            if (model != null && material != null) {
-                BindMaterialTextures(model, material, shader, textureOverride);
-            }
-
-            // 绑定骨骼纹理
-            if (jointTexture != null) {
-                BindJointTexture(jointTexture, shader);
-            }
-
-            // 设置深度状态
-            SetupDepthState(material);
-
-            // 设置剔除模式
-            SetupCullMode(material);
-
-            // 设置混合模式
-            SetupBlendMode(material, CurrentContext);
-
-            // 绘制
-            DrawMesh(mesh);
-        }
-
-        /// <summary>
-        /// 批量渲染实例（默认实现：逐个调用 Render）
-        /// 子类重写以实现 GPU 实例化
-        /// </summary>
-        public virtual void RenderInstances(List<InstanceRenderData> instances) {
-            if (instances == null || instances.Count == 0) return;
-            foreach (var inst in instances) {
-                Engine.Matrix worldMatrix = inst.WorldMatrix;
-                Engine.Matrix wvpMatrix;
-                Engine.Matrix.MultiplyRestricted(ref worldMatrix, ref _cachedEngineProjection, out wvpMatrix);
-                Render(inst.Mesh, inst.Material, wvpMatrix, worldMatrix, inst.Model, inst.LightIntensity, inst.SunVisible, inst.TextureOverride);
-            }
-        }
+        public abstract void RenderInstances(List<InstanceRenderData> instances);
 
         /// <summary>
         /// 获取或创建着色器变体
