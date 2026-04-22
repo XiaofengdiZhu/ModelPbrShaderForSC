@@ -28,8 +28,16 @@ namespace Game {
         // PBR 材质 UBO（原 PbrMeshRenderer）
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
         readonly UniformBuffer<MaterialExtensionData> _materialExtUBO = new(6);
+        readonly UniformBuffer<VolumeScatterData> _volumeScatterUBO = new(5);
         readonly Dictionary<int, int> _morphSamplerLocationCache = [];
         readonly Dictionary<(int programHandle, int weightIndex), int> _morphWeightLocationCache = [];
+        readonly HashSet<int> _scatterSamplesSetShaders = [];
+        readonly Dictionary<int, int> _transmissionSamplerLocCache = [];
+        readonly Dictionary<int, (int sizeLoc, int screenLoc)> _transmissionSizeLocCache = [];
+        readonly Dictionary<int, int> _scatterSamplerLocCache = [];
+        readonly Dictionary<int, int> _scatterDepthSamplerLocCache = [];
+        readonly PbrFramebufferManager _framebufferManager = new();
+        Shader _currentInstanceShader;
         Texture2D _currentTextureOverride;
         bool _shadersLoaded;
 
@@ -105,11 +113,142 @@ namespace Game {
             BindUniformBlock(program, "LightsData", 2);
             BindUniformBlock(program, "RenderStateData", 3);
             BindUniformBlock(program, "UVTransformData", 4);
+            BindUniformBlock(program, "VolumeScatterData", 5);
             BindUniformBlock(program, "MaterialExtensionData", 6);
         }
 
         public override void PreRenderPass(Camera camera, List<SubsystemModelsRenderer.ModelData>[] modelsToDraw) {
-            // TODO: Phase 3/4 - transmission/scatter pre-pass
+            Viewport vp = Display.Viewport;
+            _framebufferManager.SetSize(vp.Width, vp.Height);
+
+            bool hasTransmission = false;
+            bool hasScatter = false;
+            foreach (List<SubsystemModelsRenderer.ModelData> list in modelsToDraw) {
+                foreach (SubsystemModelsRenderer.ModelData md in list) {
+                    Model model = md.ComponentModel?.Model;
+                    if (model == null) continue;
+                    if (model.HasTransmission) hasTransmission = true;
+                    if (model.HasScatter) hasScatter = true;
+                    if (hasTransmission && hasScatter) break;
+                }
+                if (hasTransmission && hasScatter) break;
+            }
+            if (!hasTransmission && !hasScatter) return;
+
+            if (hasScatter) {
+                _framebufferManager.EnsureScatterFramebuffer();
+                _framebufferManager.BindScatter();
+                _framebufferManager.ClearScatter();
+                CurrentContext.UseLinearOutput = true;
+                CurrentContext.IsScatterPass = true;
+                UpdateContextHash(CurrentContext);
+                foreach (List<SubsystemModelsRenderer.ModelData> list in modelsToDraw) {
+                    RenderScatterModels(camera, list);
+                }
+                CurrentContext.UseLinearOutput = false;
+                CurrentContext.IsScatterPass = false;
+                UpdateContextHash(CurrentContext);
+                _framebufferManager.UnbindFramebuffer();
+            }
+
+            if (hasTransmission) {
+                _framebufferManager.EnsureTransmissionFramebuffer();
+                _framebufferManager.BindTransmission();
+                _framebufferManager.ClearTransmission();
+                _framebufferManager.UnbindFramebuffer();
+                _framebufferManager.CopyBackbufferToTransmission(vp.Width, vp.Height);
+                _framebufferManager.BindTransmission();
+                CurrentContext.UseLinearOutput = true;
+                UpdateContextHash(CurrentContext);
+                // 渲染不透明和 alpha-tested 模型（跳过 transmission/scatter 材质）
+                for (int i = 0; i < 2; i++) {
+                    RenderNonTransmissionModels(camera, modelsToDraw[i]);
+                }
+                CurrentContext.UseLinearOutput = false;
+                UpdateContextHash(CurrentContext);
+                _framebufferManager.GenerateTransmissionMipmap();
+                _framebufferManager.UnbindFramebuffer();
+            }
+        }
+
+        void RenderScatterModels(Camera camera, List<SubsystemModelsRenderer.ModelData> models) {
+            SubsystemModelsRenderer smr = _subsystemModelsRenderer;
+            Matrix invertedView = camera.InvertedViewMatrix;
+            foreach (SubsystemModelsRenderer.ModelData md in models) {
+                ComponentModel cm = md.ComponentModel;
+                Model model = cm.Model;
+                if (model == null) continue;
+                bool hasScatter = model.HasScatter;
+                if (!hasScatter) continue;
+                Texture2D textureOverride = cm.TextureOverride;
+                if (model.Skin != null) {
+                    RenderSkinnedModelParts(camera, md, model, cm, textureOverride, true);
+                }
+                else {
+                    foreach (int meshIndex in cm.MeshDrawOrders) {
+                        if (meshIndex < 0 || meshIndex >= model.Meshes.Count) continue;
+                        ModelMesh mesh = model.Meshes[meshIndex];
+                        foreach (ModelMeshPart part in mesh.MeshParts) {
+                            ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
+                            if (mat?.VolumeScatter?.IsEnabled != true) continue;
+                            RenderPart(mesh, part, mat, md, textureOverride);
+                        }
+                    }
+                }
+            }
+        }
+
+        void RenderNonTransmissionModels(Camera camera, List<SubsystemModelsRenderer.ModelData> models) {
+            foreach (SubsystemModelsRenderer.ModelData md in models) {
+                ComponentModel cm = md.ComponentModel;
+                Model model = cm.Model;
+                if (model == null) continue;
+                Texture2D textureOverride = cm.TextureOverride;
+                if (model.Skin != null) {
+                    RenderSkinnedModelParts(camera, md, model, cm, textureOverride, false);
+                }
+                else {
+                    foreach (int meshIndex in cm.MeshDrawOrders) {
+                        if (meshIndex < 0 || meshIndex >= model.Meshes.Count) continue;
+                        ModelMesh mesh = model.Meshes[meshIndex];
+                        int boneIndex = mesh.ParentBone?.Index ?? 0;
+                        Matrix worldMatrix = boneIndex < cm.AbsoluteBoneTransformsForCamera.Length
+                            ? cm.AbsoluteBoneTransformsForCamera[boneIndex]
+                            : Matrix.Identity;
+                        foreach (ModelMeshPart part in mesh.MeshParts) {
+                            ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
+                            if (mat?.Transmission?.IsEnabled == true
+                                || mat?.VolumeScatter?.IsEnabled == true) continue;
+                            RenderPart(mesh, part, mat, md, textureOverride);
+                        }
+                    }
+                }
+            }
+        }
+
+        void RenderSkinnedModelParts(Camera camera, SubsystemModelsRenderer.ModelData md,
+            Model model, ComponentModel cm, Texture2D textureOverride, bool scatterOnly) {
+            SubsystemModelsRenderer smr = _subsystemModelsRenderer;
+            ModelSkin skin = model.Skin;
+            int jointCount = Math.Min(skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
+            if (smr.m_jointTexture == null || smr.m_jointTexture.MaxJointCount < jointCount) {
+                smr.m_jointTexture?.Dispose();
+                smr.m_jointTexture = new JointTexture(jointCount);
+            }
+            Matrix invertedView = camera.InvertedViewMatrix;
+            jointCount = smr.CalculateJointMatrices(cm, model, invertedView, smr.m_jointMatricesBuffer);
+            smr.m_jointTexture.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
+            foreach (int meshIndex in cm.MeshDrawOrders) {
+                if (meshIndex < 0 || meshIndex >= model.Meshes.Count) continue;
+                ModelMesh mesh = model.Meshes[meshIndex];
+                foreach (ModelMeshPart part in mesh.MeshParts) {
+                    ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
+                    if (scatterOnly && mat?.VolumeScatter?.IsEnabled != true) continue;
+                    if (!scatterOnly && (mat?.Transmission?.IsEnabled == true
+                        || mat?.VolumeScatter?.IsEnabled == true)) continue;
+                    RenderPart(mesh, part, mat, md, textureOverride, smr.m_jointTexture);
+                }
+            }
         }
 
         public override void RenderPart(ModelMesh mesh,
@@ -187,6 +326,8 @@ namespace Game {
             bool isNegativeScale = DetectNegativeScale(modelData);
             SetupCullMode(effectiveMaterial, isNegativeScale);
             SetupBlendMode(effectiveMaterial, CurrentContext);
+            SetupTransmissionUniforms(effectiveMaterial, shader);
+            SetupVolumeScatterUniforms(effectiveMaterial, shader);
             GLWrapper.ApplyViewportScissor(Display.Viewport, Display.ScissorRectangle, Display.RasterizerState.ScissorTestEnable);
             DrawMeshPart(part);
         }
@@ -241,6 +382,7 @@ namespace Game {
                 if (shader == null) {
                     continue;
                 }
+                _currentInstanceShader = shader;
                 shader.PrepareForDrawing();
                 GLWrapper.UseProgram(shader.m_program);
                 int programHandle = shader.m_program;
@@ -312,6 +454,8 @@ namespace Game {
             SetupDepthState(material);
             SetupCullMode(material, isNegativeScale);
             SetupBlendMode(material, CurrentContext);
+            SetupTransmissionUniforms(material, _currentInstanceShader);
+            SetupVolumeScatterUniforms(material, _currentInstanceShader);
             DrawMeshInstanced(mesh, count);
             DisableInstanceAttributes();
         }
@@ -648,6 +792,87 @@ namespace Game {
             return hash;
         }
 
+        void SetupTransmissionUniforms(ModelMaterial material, Shader shader) {
+            if (material?.Transmission?.IsEnabled != true
+                || !_framebufferManager.HasTransmissionFramebuffer) {
+                return;
+            }
+            int programHandle = shader.m_program;
+            if (!_transmissionSamplerLocCache.TryGetValue(programHandle, out int samplerLoc)) {
+                samplerLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TransmissionFramebufferSampler");
+                _transmissionSamplerLocCache[programHandle] = samplerLoc;
+            }
+            if (samplerLoc >= 0) {
+                GLWrapper.GL.Uniform1(samplerLoc, (int)MaterialTextureSlot.TransmissionFramebuffer);
+            }
+            if (!_transmissionSizeLocCache.TryGetValue(programHandle, out (int sizeLoc, int screenLoc) locs)) {
+                locs.sizeLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TransmissionFramebufferSize");
+                locs.screenLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_ScreenSize");
+                _transmissionSizeLocCache[programHandle] = locs;
+            }
+            if (locs.sizeLoc >= 0) {
+                GLWrapper.GL.Uniform2(locs.sizeLoc, (float)_framebufferManager.Width, (float)_framebufferManager.Height);
+            }
+            if (locs.screenLoc >= 0) {
+                GLWrapper.GL.Uniform2(locs.screenLoc, (float)_framebufferManager.Width, (float)_framebufferManager.Height);
+            }
+            _framebufferManager.BindTransmissionTexture();
+        }
+
+        void SetupVolumeScatterUniforms(ModelMaterial material, Shader shader) {
+            if (material?.VolumeScatter?.IsEnabled != true) {
+                return;
+            }
+            VolumeScatterData scatterData = new() {
+                MultiScatterColor = new Vector4(material.VolumeScatter.MultiscatterColor, 0f),
+                MinRadius = VolumeScatterExtension.ScatterMinRadius,
+                MaterialID = CurrentContext.IsScatterPass ? 1 : 0,
+                FramebufferWidth = _framebufferManager.Width,
+                FramebufferHeight = _framebufferManager.Height
+            };
+            _volumeScatterUBO.Update(ref scatterData);
+            SetScatterSamplesUniformsOnce(shader);
+            if (!CurrentContext.IsScatterPass
+                && _framebufferManager.HasScatterFramebuffer) {
+                int programHandle = shader.m_program;
+                if (!_scatterSamplerLocCache.TryGetValue(programHandle, out int samplerLoc)) {
+                    samplerLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_ScatterFramebufferSampler");
+                    _scatterSamplerLocCache[programHandle] = samplerLoc;
+                }
+                if (samplerLoc >= 0) {
+                    GLWrapper.GL.Uniform1(samplerLoc, (int)MaterialTextureSlot.ScatterFramebuffer);
+                }
+                if (!_scatterDepthSamplerLocCache.TryGetValue(programHandle, out int depthLoc)) {
+                    depthLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_ScatterDepthFramebufferSampler");
+                    _scatterDepthSamplerLocCache[programHandle] = depthLoc;
+                }
+                if (depthLoc >= 0) {
+                    GLWrapper.GL.Uniform1(depthLoc, (int)MaterialTextureSlot.ScatterDepthFramebuffer);
+                }
+                _framebufferManager.BindScatterTextures();
+            }
+        }
+
+        void SetScatterSamplesUniformsOnce(Shader shader) {
+            if (_scatterSamplesSetShaders.Contains(shader.m_program)) {
+                return;
+            }
+            float[] samples = VolumeScatterExtension.ScatterSamples;
+            if (samples == null) {
+                return;
+            }
+            int sampleCount = samples.Length / 3;
+            int programHandle = shader.m_program;
+            for (int i = 0; i < sampleCount; i++) {
+                int idx = i * 3;
+                int loc = GLWrapper.GL.GetUniformLocation((uint)programHandle, $"u_ScatterSamples[{i}]");
+                if (loc >= 0) {
+                    GLWrapper.GL.Uniform3(loc, samples[idx], samples[idx + 1], samples[idx + 2]);
+                }
+            }
+            _scatterSamplesSetShaders.Add(programHandle);
+        }
+
         void AddToneMapDefine(ShaderDefines defines, ToneMapMode mode) {
             switch (mode) {
                 case ToneMapMode.KhrPbrNeutral: defines.Add("TONEMAP_KHR_PBR_NEUTRAL"); break;
@@ -695,8 +920,15 @@ namespace Game {
             IblSampler?.Dispose();
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
+            _volumeScatterUBO?.Dispose();
+            _framebufferManager?.Dispose();
             _morphSamplerLocationCache.Clear();
             _morphWeightLocationCache.Clear();
+            _scatterSamplesSetShaders.Clear();
+            _transmissionSamplerLocCache.Clear();
+            _transmissionSizeLocCache.Clear();
+            _scatterSamplerLocCache.Clear();
+            _scatterDepthSamplerLocCache.Clear();
             CelestialBodyCache.Clear();
             base.Dispose();
         }

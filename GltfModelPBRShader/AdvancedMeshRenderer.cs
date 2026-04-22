@@ -588,7 +588,7 @@ namespace Game {
             };
         }
 
-        void UpdateContextHash(RenderContext context) {
+        protected void UpdateContextHash(RenderContext context) {
             (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, int LightCount, DebugChannel DebugChannel) contextParams = (context.UseIBL,
                 context.UseLinearOutput, context.ToneMapMode, context.LightCount, context.DebugChannel);
             if (_lastContextParams == contextParams) {
