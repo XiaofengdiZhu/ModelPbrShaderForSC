@@ -108,6 +108,10 @@ namespace Game {
             BindUniformBlock(program, "MaterialExtensionData", 6);
         }
 
+        public override void PreRenderPass(Camera camera, List<SubsystemModelsRenderer.ModelData>[] modelsToDraw) {
+            // TODO: Phase 3/4 - transmission/scatter pre-pass
+        }
+
         public override void RenderPart(ModelMesh mesh,
             ModelMeshPart part,
             ModelMaterial material,
@@ -340,10 +344,10 @@ namespace Game {
             }
         }
 
-        protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) =>
+        protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, RenderContext context) =>
             CreateShaderVariantInternal(mesh, material, context, false);
 
-        protected override Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+        protected override Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, RenderContext context) {
             int materialHash = ComputeMaterialHash(material) * 31 + ComputeMorphHash(mesh);
             int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
             Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
@@ -353,7 +357,7 @@ namespace Game {
             return CreateShaderVariant(mesh, material, context);
         }
 
-        Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, in RenderContext context, bool isInstanced) {
+        Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, RenderContext context, bool isInstanced) {
             ShaderDefines defines = new();
             AddVertexAttributeDefines(defines, mesh);
             if (isInstanced) {
@@ -406,7 +410,7 @@ namespace Game {
             }
         }
 
-        Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+        Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, RenderContext context) {
             int materialHash = ComputeMaterialHash(material) * 31 + InstancedHashSalt;
             int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
             Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);

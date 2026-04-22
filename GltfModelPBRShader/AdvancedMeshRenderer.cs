@@ -62,7 +62,7 @@ namespace Game {
         protected SubsystemTerrain _subsystemTerrain;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
         Vector3 _viewLightDir;
-        protected RenderContext CurrentContext;
+        protected RenderContext CurrentContext = new();
         protected int LastExtensionFlags;
 
         // 材质缓存状态（子类可访问）
@@ -182,19 +182,20 @@ namespace Game {
             EnvironmentStrength = Math.Max(skyIntensity, 0.1f);
             ActiveLightDirection = lightDirection;
             IsDirectionalLightActive = lightDirection.Y <= 0f;
-            CurrentContext = new RenderContext {
-                View = Matrix4x4.Identity,
-                Projection = camera.ProjectionMatrix,
-                CameraView = camera.ViewMatrix,
-                Wvp = camera.ViewMatrix * camera.ProjectionMatrix,
-                UseIBL = HasIBL,
-                ToneMapMode = ToneMapMode.KhrPbrNeutral,
-                LightCount = 1,
-                EnableSkinning = false,
-                EnableMorphing = true,
-                LightDirection = lightDirection,
-                LightColor = lightColor
-            };
+            CurrentContext.View = Matrix4x4.Identity;
+            CurrentContext.Projection = camera.ProjectionMatrix;
+            CurrentContext.CameraView = camera.ViewMatrix;
+            CurrentContext.Wvp = camera.ViewMatrix * camera.ProjectionMatrix;
+            CurrentContext.UseIBL = HasIBL;
+            CurrentContext.UseLinearOutput = false;
+            CurrentContext.IsScatterPass = false;
+            CurrentContext.ToneMapMode = ToneMapMode.KhrPbrNeutral;
+            CurrentContext.LightCount = 1;
+            CurrentContext.DebugChannel = DebugChannel.None;
+            CurrentContext.EnableSkinning = false;
+            CurrentContext.EnableMorphing = true;
+            CurrentContext.LightDirection = lightDirection;
+            CurrentContext.LightColor = lightColor;
             UpdateContextHash(CurrentContext);
             CurrentViewProjection = CurrentContext.View * CurrentContext.Projection;
 
@@ -235,6 +236,8 @@ namespace Game {
             Texture2D textureOverride,
             JointTexture jointTexture = null);
 
+        public virtual void PreRenderPass(Camera camera, List<SubsystemModelsRenderer.ModelData>[] modelsToDraw) { }
+
         public virtual void Dispose() {
             SceneUBO?.Dispose();
             LightsUBO?.Dispose();
@@ -264,12 +267,12 @@ namespace Game {
         /// <summary>
         /// 创建着色器变体（由模组实现）
         /// </summary>
-        protected abstract Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context);
+        protected abstract Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, RenderContext context);
 
         /// <summary>
         /// 获取或创建着色器变体
         /// </summary>
-        protected virtual Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+        protected virtual Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, RenderContext context) {
             // 计算材质 hash（子类可重写以优化）
             int materialHash = ComputeMaterialHash(material);
             int contextHash = CachedContextHash;
@@ -383,7 +386,7 @@ namespace Game {
         /// 直接调用 Enable/Disable(Blend) 会绕过缓存，导致后续 Display.DrawIndexed
         /// 的 ApplyBlendState 跳过 GL 调用，混合状态异常。
         /// </summary>
-        protected virtual void SetupBlendMode(ModelMaterial material, in RenderContext context) {
+        protected virtual void SetupBlendMode(ModelMaterial material, RenderContext context) {
             // Transmission + 线性输出时禁用 blend（transmission pass 不需要混合）
             if (material?.Transmission?.IsEnabled == true
                 && context.UseLinearOutput) {
@@ -585,7 +588,7 @@ namespace Game {
             };
         }
 
-        void UpdateContextHash(in RenderContext context) {
+        void UpdateContextHash(RenderContext context) {
             (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, int LightCount, DebugChannel DebugChannel) contextParams = (context.UseIBL,
                 context.UseLinearOutput, context.ToneMapMode, context.LightCount, context.DebugChannel);
             if (_lastContextParams == contextParams) {
@@ -598,7 +601,7 @@ namespace Game {
         /// <summary>
         /// 计算渲染上下文的 defines hash
         /// </summary>
-        protected static int ComputeContextHash(in RenderContext context) {
+        protected static int ComputeContextHash(RenderContext context) {
             unchecked {
                 int hash = 17;
                 if (context.UseIBL) {
@@ -632,7 +635,7 @@ namespace Game {
         /// - DiffuseTransmission 强制启用 IBL
         /// - Unlit 材质移除 USE_PUNCTUAL
         /// </summary>
-        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, in RenderContext context) {
+        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, RenderContext context) {
             unchecked {
                 if (material?.DiffuseTransmission?.IsEnabled == true
                     && !context.UseIBL) {
