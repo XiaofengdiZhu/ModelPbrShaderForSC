@@ -372,6 +372,12 @@ namespace Game {
         /// 的 ApplyBlendState 跳过 GL 调用，混合状态异常。
         /// </summary>
         protected virtual void SetupBlendMode(ModelMaterial material, in RenderContext context) {
+            // Transmission + 线性输出时禁用 blend（transmission pass 不需要混合）
+            if (material?.Transmission?.IsEnabled == true
+                && context.UseLinearOutput) {
+                GLWrapper.ApplyBlendState(BlendState.Opaque);
+                return;
+            }
             ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
             GLWrapper.ApplyBlendState(alphaMode == ModelAlphaMode.Blend ? BlendState.AlphaBlend : BlendState.Opaque);
         }
@@ -606,6 +612,25 @@ namespace Game {
                     hash = hash * 31 + $"DEBUG {(int)context.DebugChannel}".GetHashCode();
                 }
                 return hash;
+            }
+        }
+
+        /// <summary>
+        /// 根据材质特性调整上下文 hash：
+        /// - DiffuseTransmission 强制启用 IBL
+        /// - Unlit 材质移除 USE_PUNCTUAL
+        /// </summary>
+        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, in RenderContext context) {
+            unchecked {
+                if (material?.DiffuseTransmission?.IsEnabled == true
+                    && !context.UseIBL) {
+                    contextHash ^= "USE_IBL 1".GetHashCode();
+                }
+                if (material?.Unlit?.IsEnabled == true
+                    && context.LightCount > 0) {
+                    contextHash ^= "USE_PUNCTUAL 1".GetHashCode();
+                }
+                return contextHash;
             }
         }
 

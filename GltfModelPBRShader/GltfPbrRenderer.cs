@@ -302,6 +302,16 @@ namespace Game {
         protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, in RenderContext context) =>
             CreateShaderVariantInternal(mesh, material, context, false);
 
+        protected override Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
+            int materialHash = ComputeMaterialHash(material);
+            int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
+            Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
+            if (shader != null) {
+                return shader;
+            }
+            return CreateShaderVariant(mesh, material, context);
+        }
+
         Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, in RenderContext context, bool isInstanced) {
             ShaderDefines defines = new();
             AddVertexAttributeDefines(defines, mesh);
@@ -311,10 +321,14 @@ namespace Game {
             if (material != null) {
                 AddMaterialDefines(defines, material);
             }
-            if (context.UseIBL) {
+            // DiffuseTransmission 需要 IBL 采样背面环境光
+            bool useIBL = context.UseIBL || material?.DiffuseTransmission?.IsEnabled == true;
+            if (useIBL) {
                 defines.Add("USE_IBL");
             }
-            if (context.LightCount > 0) {
+            // Unlit 材质不需要灯光计算
+            if (context.LightCount > 0
+                && material?.Unlit?.IsEnabled != true) {
                 defines.Add("USE_PUNCTUAL");
             }
             if (context.UseLinearOutput) {
@@ -332,9 +346,13 @@ namespace Game {
             }
             ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
             defines.AddRaw($"ALPHAMODE {(int)alphaMode}");
+            // 根据工作流选择片段着色器
+            string fragShader = context.IsScatterPass ? "scatter.frag"
+                : material?.SpecularGlossiness?.IsEnabled == true ? "specular_glossiness.frag"
+                : "pbr.frag";
             try {
                 int vertHash = ShaderCache.SelectShader("primitive.vert", defines);
-                int fragHash = ShaderCache.SelectShader("pbr.frag", defines);
+                int fragHash = ShaderCache.SelectShader(fragShader, defines);
                 return ShaderCache.GetShaderProgram(vertHash, fragHash);
             }
             catch (Exception ex) {
@@ -345,7 +363,7 @@ namespace Game {
 
         Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
             int materialHash = ComputeMaterialHash(material) * 31 + InstancedHashSalt;
-            int contextHash = CachedContextHash;
+            int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
             Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
             if (shader != null) {
                 return shader;
@@ -452,12 +470,25 @@ namespace Game {
             if (material.SpecularGlossiness?.IsEnabled == true) {
                 defines.Add("MATERIAL_SPECULAR_GLOSSINESS");
             }
+            if (material.EmissiveStrength?.IsEnabled == true) {
+                defines.Add("MATERIAL_EMISSIVE_STRENGTH");
+            }
+            if (material.Unlit?.IsEnabled == true) {
+                defines.Add("MATERIAL_UNLIT");
+            }
         }
 
         protected override int ComputeMaterialHash(ModelMaterial material) {
             int hash = base.ComputeMaterialHash(material);
             if (_currentTextureOverride != null) {
                 hash = hash * 31 + "__TEX_OVERRIDE__".GetHashCode();
+            }
+            // SpecularGlossiness 和 Unlit 影响片段着色器选择
+            if (material?.SpecularGlossiness?.IsEnabled == true) {
+                hash = hash * 31 + "SPEC_GLOSS".GetHashCode();
+            }
+            if (material?.Unlit?.IsEnabled == true) {
+                hash = hash * 31 + "UNLIT".GetHashCode();
             }
             return hash;
         }
