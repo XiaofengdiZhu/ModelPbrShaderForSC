@@ -71,8 +71,8 @@ namespace Game {
 
         public void GenerateTransmissionMipmap() => _transmission?.GenerateMipMaps();
 
-        public void CopyBackbufferToTransmission(int screenWidth, int screenHeight) =>
-            _transmission?.CopyFromBackbuffer(screenWidth, screenHeight);
+        public void BlitBackbufferToTransmission(int screenWidth, int screenHeight) =>
+            _transmission?.BlitFromBackbuffer(screenWidth, screenHeight);
 
         public void UnbindFramebuffer() {
             GLWrapper.ApplyRenderTarget(null);

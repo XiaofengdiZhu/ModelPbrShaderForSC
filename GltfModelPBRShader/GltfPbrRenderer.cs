@@ -38,8 +38,23 @@ namespace Game {
         readonly Dictionary<int, int> _scatterDepthSamplerLocCache = [];
         readonly PbrFramebufferManager _framebufferManager = new();
         Shader _currentInstanceShader;
+        bool _transmissionCapturedThisFrame;
+        bool _hasTransmissionThisFrame;
         Texture2D _currentTextureOverride;
         bool _shadersLoaded;
+
+        // Deferred transmission rendering
+        readonly List<InstanceRenderData> _deferredTransmissionInstances = [];
+        readonly List<DeferredPartRender> _deferredTransmissionParts = [];
+        readonly List<InstanceRenderData> _nonTransmissionInstances = [];
+
+        struct DeferredPartRender {
+            public ModelMesh Mesh;
+            public ModelMeshPart Part;
+            public ModelMaterial Material;
+            public SubsystemModelsRenderer.ModelData ModelData;
+            public Texture2D TextureOverride;
+        }
 
         public IblSampler IblSampler { get; private set; }
 
@@ -120,54 +135,82 @@ namespace Game {
         public override void PreRenderPass(Camera camera, List<SubsystemModelsRenderer.ModelData>[] modelsToDraw) {
             Viewport vp = Display.Viewport;
             _framebufferManager.SetSize(vp.Width, vp.Height);
+            _transmissionCapturedThisFrame = false;
+            _hasTransmissionThisFrame = false;
+            _deferredTransmissionParts.Clear();
+            _deferredTransmissionInstances.Clear();
 
-            bool hasTransmission = false;
+            // 检测是否有 scatter/transmission 材质
             bool hasScatter = false;
             foreach (List<SubsystemModelsRenderer.ModelData> list in modelsToDraw) {
                 foreach (SubsystemModelsRenderer.ModelData md in list) {
                     Model model = md.ComponentModel?.Model;
                     if (model == null) continue;
-                    if (model.HasTransmission) hasTransmission = true;
                     if (model.HasScatter) hasScatter = true;
-                    if (hasTransmission && hasScatter) break;
+                    if (model.HasTransmission) _hasTransmissionThisFrame = true;
                 }
-                if (hasTransmission && hasScatter) break;
+                if (hasScatter && _hasTransmissionThisFrame) break;
             }
-            if (!hasTransmission && !hasScatter) return;
+            if (!hasScatter) return;
 
-            if (hasScatter) {
-                _framebufferManager.EnsureScatterFramebuffer();
-                _framebufferManager.BindScatter();
-                _framebufferManager.ClearScatter();
-                CurrentContext.UseLinearOutput = true;
-                CurrentContext.IsScatterPass = true;
-                UpdateContextHash(CurrentContext);
-                foreach (List<SubsystemModelsRenderer.ModelData> list in modelsToDraw) {
-                    RenderScatterModels(camera, list);
-                }
-                CurrentContext.UseLinearOutput = false;
-                CurrentContext.IsScatterPass = false;
-                UpdateContextHash(CurrentContext);
-                _framebufferManager.UnbindFramebuffer();
+            // Scatter pass: 渲染 scatter 材质到 scatter FBO
+            _framebufferManager.EnsureScatterFramebuffer();
+            _framebufferManager.BindScatter();
+            _framebufferManager.ClearScatter();
+            CurrentContext.UseLinearOutput = true;
+            CurrentContext.IsScatterPass = true;
+            UpdateContextHash(CurrentContext);
+            foreach (List<SubsystemModelsRenderer.ModelData> list in modelsToDraw) {
+                RenderScatterModels(camera, list);
+            }
+            CurrentContext.UseLinearOutput = false;
+            CurrentContext.IsScatterPass = false;
+            UpdateContextHash(CurrentContext);
+            _framebufferManager.UnbindFramebuffer();
+        }
+
+        public override void PreTransparentPass(Camera camera) {
+            if (!_hasTransmissionThisFrame) return;
+
+            // 捕获 backbuffer（此时已包含天空+地形+所有不透明物体）
+            _framebufferManager.EnsureTransmissionFramebuffer();
+            _framebufferManager.Transmission.BlitFromBackbuffer(
+                Display.Viewport.Width, Display.Viewport.Height);
+            _framebufferManager.GenerateTransmissionMipmap();
+            _transmissionCapturedThisFrame = true;
+
+            // 回放延迟的蒙皮模型 transmission 部件
+            if (_deferredTransmissionParts.Count > 0) {
+                ReplayDeferredParts(camera);
+                _deferredTransmissionParts.Clear();
             }
 
-            if (hasTransmission) {
-                _framebufferManager.EnsureTransmissionFramebuffer();
-                _framebufferManager.BindTransmission();
-                _framebufferManager.ClearTransmission();
-                _framebufferManager.UnbindFramebuffer();
-                _framebufferManager.CopyBackbufferToTransmission(vp.Width, vp.Height);
-                _framebufferManager.BindTransmission();
-                CurrentContext.UseLinearOutput = true;
-                UpdateContextHash(CurrentContext);
-                // 渲染不透明和 alpha-tested 模型（跳过 transmission/scatter 材质）
-                for (int i = 0; i < 2; i++) {
-                    RenderNonTransmissionModels(camera, modelsToDraw[i]);
+            // 回放延迟的非蒙皮 transmission 实例
+            if (_deferredTransmissionInstances.Count > 0) {
+                RenderInstancesInternal(_deferredTransmissionInstances);
+                _deferredTransmissionInstances.Clear();
+            }
+        }
+
+        void ReplayDeferredParts(Camera camera) {
+            SubsystemModelsRenderer smr = _subsystemModelsRenderer;
+            Model lastModel = null;
+            foreach (DeferredPartRender d in _deferredTransmissionParts) {
+                Model model = d.ModelData.ComponentModel?.Model;
+                // 蒙皮模型需要重新计算骨骼矩阵（JointTexture 是共享的，会被覆盖）
+                if (model?.Skin != null && model != lastModel) {
+                    lastModel = model;
+                    int jointCount = Math.Min(model.Skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
+                    if (smr.m_jointTexture == null || smr.m_jointTexture.MaxJointCount < jointCount) {
+                        smr.m_jointTexture?.Dispose();
+                        smr.m_jointTexture = new JointTexture(jointCount);
+                    }
+                    Matrix invertedView = camera.InvertedViewMatrix;
+                    jointCount = smr.CalculateJointMatrices(d.ModelData.ComponentModel, model, invertedView, smr.m_jointMatricesBuffer);
+                    smr.m_jointTexture.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
                 }
-                CurrentContext.UseLinearOutput = false;
-                UpdateContextHash(CurrentContext);
-                _framebufferManager.GenerateTransmissionMipmap();
-                _framebufferManager.UnbindFramebuffer();
+                JointTexture jt = model?.Skin != null ? smr.m_jointTexture : null;
+                RenderPart(d.Mesh, d.Part, d.Material, d.ModelData, d.TextureOverride, jt);
             }
         }
 
@@ -182,7 +225,7 @@ namespace Game {
                 if (!hasScatter) continue;
                 Texture2D textureOverride = cm.TextureOverride;
                 if (model.Skin != null) {
-                    RenderSkinnedModelParts(camera, md, model, cm, textureOverride, true);
+                    RenderSkinnedModelParts(camera, md, model, cm, textureOverride);
                 }
                 else {
                     foreach (int meshIndex in cm.MeshDrawOrders) {
@@ -198,36 +241,8 @@ namespace Game {
             }
         }
 
-        void RenderNonTransmissionModels(Camera camera, List<SubsystemModelsRenderer.ModelData> models) {
-            foreach (SubsystemModelsRenderer.ModelData md in models) {
-                ComponentModel cm = md.ComponentModel;
-                Model model = cm.Model;
-                if (model == null) continue;
-                Texture2D textureOverride = cm.TextureOverride;
-                if (model.Skin != null) {
-                    RenderSkinnedModelParts(camera, md, model, cm, textureOverride, false);
-                }
-                else {
-                    foreach (int meshIndex in cm.MeshDrawOrders) {
-                        if (meshIndex < 0 || meshIndex >= model.Meshes.Count) continue;
-                        ModelMesh mesh = model.Meshes[meshIndex];
-                        int boneIndex = mesh.ParentBone?.Index ?? 0;
-                        Matrix worldMatrix = boneIndex < cm.AbsoluteBoneTransformsForCamera.Length
-                            ? cm.AbsoluteBoneTransformsForCamera[boneIndex]
-                            : Matrix.Identity;
-                        foreach (ModelMeshPart part in mesh.MeshParts) {
-                            ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
-                            if (mat?.Transmission?.IsEnabled == true
-                                || mat?.VolumeScatter?.IsEnabled == true) continue;
-                            RenderPart(mesh, part, mat, md, textureOverride);
-                        }
-                    }
-                }
-            }
-        }
-
         void RenderSkinnedModelParts(Camera camera, SubsystemModelsRenderer.ModelData md,
-            Model model, ComponentModel cm, Texture2D textureOverride, bool scatterOnly) {
+            Model model, ComponentModel cm, Texture2D textureOverride) {
             SubsystemModelsRenderer smr = _subsystemModelsRenderer;
             ModelSkin skin = model.Skin;
             int jointCount = Math.Min(skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
@@ -243,9 +258,7 @@ namespace Game {
                 ModelMesh mesh = model.Meshes[meshIndex];
                 foreach (ModelMeshPart part in mesh.MeshParts) {
                     ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
-                    if (scatterOnly && mat?.VolumeScatter?.IsEnabled != true) continue;
-                    if (!scatterOnly && (mat?.Transmission?.IsEnabled == true
-                        || mat?.VolumeScatter?.IsEnabled == true)) continue;
+                    if (mat?.VolumeScatter?.IsEnabled != true) continue;
                     RenderPart(mesh, part, mat, md, textureOverride, smr.m_jointTexture);
                 }
             }
@@ -258,6 +271,18 @@ namespace Game {
             Texture2D textureOverride,
             JointTexture jointTexture = null) {
             if (part == null) {
+                return;
+            }
+            // scatter 材质只在 scatter pass 渲染，跳过主渲染流程
+            if (material?.VolumeScatter?.IsEnabled == true && !CurrentContext.IsScatterPass) {
+                return;
+            }
+            // 延迟 transmission 材质：等 backbuffer 捕获后再渲染
+            if (!_transmissionCapturedThisFrame && material?.Transmission?.IsEnabled == true) {
+                _deferredTransmissionParts.Add(new DeferredPartRender {
+                    Mesh = mesh, Part = part, Material = material,
+                    ModelData = modelData, TextureOverride = textureOverride
+                });
                 return;
             }
             _currentTextureOverride = textureOverride;
@@ -348,6 +373,36 @@ namespace Game {
                 || instances.Count == 0) {
                 return;
             }
+
+            // 延迟 transmission 实例：等 backbuffer 捕获后再渲染
+            if (!_transmissionCapturedThisFrame) {
+                bool hasTransmission = false;
+                foreach (InstanceRenderData inst in instances) {
+                    if (inst.Material?.Transmission?.IsEnabled == true) {
+                        hasTransmission = true;
+                        break;
+                    }
+                }
+                if (hasTransmission) {
+                    _nonTransmissionInstances.Clear();
+                    foreach (InstanceRenderData inst in instances) {
+                        if (inst.Material?.Transmission?.IsEnabled == true) {
+                            _deferredTransmissionInstances.Add(inst);
+                        }
+                        else {
+                            _nonTransmissionInstances.Add(inst);
+                        }
+                    }
+                    if (_nonTransmissionInstances.Count == 0) return;
+                    RenderInstancesInternal(_nonTransmissionInstances);
+                    return;
+                }
+            }
+
+            RenderInstancesInternal(instances);
+        }
+
+        void RenderInstancesInternal(List<InstanceRenderData> instances) {
 
             // 1. 按 (mesh, material, textureOverride) 分组（复用字典）
             _instanceGroups.Clear();
@@ -793,10 +848,8 @@ namespace Game {
         }
 
         void SetupTransmissionUniforms(ModelMaterial material, Shader shader) {
-            if (material?.Transmission?.IsEnabled != true
-                || !_framebufferManager.HasTransmissionFramebuffer) {
-                return;
-            }
+            if (material?.Transmission?.IsEnabled != true) return;
+            if (!_framebufferManager.HasTransmissionFramebuffer) return;
             int programHandle = shader.m_program;
             if (!_transmissionSamplerLocCache.TryGetValue(programHandle, out int samplerLoc)) {
                 samplerLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TransmissionFramebufferSampler");
@@ -811,10 +864,10 @@ namespace Game {
                 _transmissionSizeLocCache[programHandle] = locs;
             }
             if (locs.sizeLoc >= 0) {
-                GLWrapper.GL.Uniform2(locs.sizeLoc, (float)_framebufferManager.Width, (float)_framebufferManager.Height);
+                GLWrapper.GL.Uniform2(locs.sizeLoc, _framebufferManager.Width, _framebufferManager.Height);
             }
             if (locs.screenLoc >= 0) {
-                GLWrapper.GL.Uniform2(locs.screenLoc, (float)_framebufferManager.Width, (float)_framebufferManager.Height);
+                GLWrapper.GL.Uniform2(locs.screenLoc, _framebufferManager.Width, _framebufferManager.Height);
             }
             _framebufferManager.BindTransmissionTexture();
         }

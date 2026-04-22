@@ -238,6 +238,8 @@ namespace Game {
 
         public virtual void PreRenderPass(Camera camera, List<SubsystemModelsRenderer.ModelData>[] modelsToDraw) { }
 
+        public virtual void PreTransparentPass(Camera camera) { }
+
         public virtual void Dispose() {
             SceneUBO?.Dispose();
             LightsUBO?.Dispose();
