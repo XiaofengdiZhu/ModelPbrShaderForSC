@@ -30,6 +30,7 @@ namespace Game {
         Texture2D _currentTextureOverride;
         bool _shadersLoaded;
         readonly Dictionary<int, int> _morphSamplerLocationCache = [];
+        readonly Dictionary<(int programHandle, int weightIndex), int> _morphWeightLocationCache = [];
 
         public IblSampler IblSampler { get; private set; }
 
@@ -265,28 +266,48 @@ namespace Game {
                 }
 
                 // 分批绘制（每批最多 MaxInstancesPerBatch 个实例）
+                // 正负缩放实例不能共享同一 draw call（剔除方向不同），需分两次渲染
                 for (int offset = 0; offset < groupInstances.Count; offset += MaxInstancesPerBatch) {
                     int count = Math.Min(MaxInstancesPerBatch, groupInstances.Count - offset);
-                    bool batchHasNegativeScale = false;
+                    // 单次遍历：正缩放放前部，负缩放放尾部
+                    int posCount = 0, negCount = 0;
                     for (int i = 0; i < count; i++) {
                         InstanceRenderData inst = groupInstances[offset + i];
-                        _instanceMatrices[i] = inst.WorldMatrix;
-                        _instanceLightData[i] = new Vector2(inst.ModelData.Light, GetCelestialBodyVisible(inst.ModelData) ? 1f : 0f);
-                        if (!batchHasNegativeScale && inst.WorldMatrix.Determinant() < 0f) {
-                            batchHasNegativeScale = true;
+                        Vector2 light = new(inst.ModelData.Light, GetCelestialBodyVisible(inst.ModelData) ? 1f : 0f);
+                        if (inst.WorldMatrix.Determinant() < 0f) {
+                            _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = inst.WorldMatrix;
+                            _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
+                            negCount++;
+                        } else {
+                            _instanceMatrices[posCount] = inst.WorldMatrix;
+                            _instanceLightData[posCount] = light;
+                            posCount++;
                         }
                     }
-                    UploadInstanceData(_instanceMatrices, count);
-                    UploadInstanceLightData(_instanceLightData, count);
-                    SetupInstanceAttributes();
-                    SetupDepthState(effectiveMaterial);
-                    SetupCullMode(effectiveMaterial, batchHasNegativeScale);
-                    SetupBlendMode(effectiveMaterial, CurrentContext);
-                    DrawMeshInstanced(mesh, count);
-                    DisableInstanceAttributes();
+                    if (posCount > 0) {
+                        DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
+                    }
+                    if (negCount > 0) {
+                        for (int i = 0; i < negCount; i++) {
+                            _instanceMatrices[i] = _instanceMatrices[MaxInstancesPerBatch - 1 - i];
+                            _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
+                        }
+                        DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
+                    }
                 }
             }
             _currentTextureOverride = null;
+        }
+
+        void DrawInstanceBatch(ModelMesh mesh, ModelMaterial material, int count, bool isNegativeScale) {
+            UploadInstanceData(_instanceMatrices, count);
+            UploadInstanceLightData(_instanceLightData, count);
+            SetupInstanceAttributes();
+            SetupDepthState(material);
+            SetupCullMode(material, isNegativeScale);
+            SetupBlendMode(material, CurrentContext);
+            DrawMeshInstanced(mesh, count);
+            DisableInstanceAttributes();
         }
 
         void BindIBLTextures() {
@@ -321,7 +342,7 @@ namespace Game {
             CreateShaderVariantInternal(mesh, material, context, false);
 
         protected override Shader GetOrCreateShader(ModelMesh mesh, ModelMaterial material, in RenderContext context) {
-            int materialHash = ComputeMaterialHash(material);
+            int materialHash = ComputeMaterialHash(material) * 31 + ComputeMorphHash(mesh);
             int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
             Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
             if (shader != null) {
@@ -460,6 +481,31 @@ namespace Game {
             return false;
         }
 
+        static int ComputeMorphHash(ModelMesh mesh) {
+            if (!HasMorphTargetData(mesh)) return 0;
+            unchecked {
+                int hash = "__MORPH__".GetHashCode();
+                foreach (ModelMeshPart part in mesh.MeshParts) {
+                    if (part?.HasMorphTargets != true) continue;
+                    hash = hash * 31 + part.MorphTargetCount;
+                    hash = hash * 31 + (part.HasMorphTargetPosition ? 1 : 0);
+                    hash = hash * 31 + (part.HasMorphTargetNormal ? 1 : 0);
+                    hash = hash * 31 + (part.HasMorphTargetTangent ? 1 : 0);
+                    hash = hash * 31 + (part.HasMorphTargetTexCoord0 ? 1 : 0);
+                    hash = hash * 31 + (part.HasMorphTargetTexCoord1 ? 1 : 0);
+                    hash = hash * 31 + (part.HasMorphTargetColor0 ? 1 : 0);
+                    hash = hash * 31 + part.MorphTargetPositionOffset;
+                    hash = hash * 31 + part.MorphTargetNormalOffset;
+                    hash = hash * 31 + part.MorphTargetTangentOffset;
+                    hash = hash * 31 + part.MorphTargetTexCoord0Offset;
+                    hash = hash * 31 + part.MorphTargetTexCoord1Offset;
+                    hash = hash * 31 + part.MorphTargetColor0Offset;
+                    break;
+                }
+                return hash;
+            }
+        }
+
         static void AddMorphTargetDefines(ShaderDefines defines, ModelMesh mesh) {
             foreach (ModelMeshPart part in mesh.MeshParts) {
                 if (part?.HasMorphTargets != true) {
@@ -468,18 +514,30 @@ namespace Game {
                 defines.Add("USE_MORPHING");
                 defines.Add("HAS_MORPH_TARGETS");
                 defines.AddRaw($"WEIGHT_COUNT {part.MorphTargetCount}");
-                if (part.HasMorphTargetPosition) defines.Add("HAS_MORPH_TARGET_POSITION");
-                if (part.HasMorphTargetNormal) defines.Add("HAS_MORPH_TARGET_NORMAL");
-                if (part.HasMorphTargetTangent) defines.Add("HAS_MORPH_TARGET_TANGENT");
-                if (part.HasMorphTargetTexCoord0) defines.Add("HAS_MORPH_TARGET_TEXCOORD_0");
-                if (part.HasMorphTargetTexCoord1) defines.Add("HAS_MORPH_TARGET_TEXCOORD_1");
-                if (part.HasMorphTargetColor0) defines.Add("HAS_MORPH_TARGET_COLOR_0");
-                defines.AddRaw($"MORPH_TARGET_POSITION_OFFSET {part.MorphTargetPositionOffset}");
-                defines.AddRaw($"MORPH_TARGET_NORMAL_OFFSET {part.MorphTargetNormalOffset}");
-                defines.AddRaw($"MORPH_TARGET_TANGENT_OFFSET {part.MorphTargetTangentOffset}");
-                defines.AddRaw($"MORPH_TARGET_TEXCOORD_0_OFFSET {part.MorphTargetTexCoord0Offset}");
-                defines.AddRaw($"MORPH_TARGET_TEXCOORD_1_OFFSET {part.MorphTargetTexCoord1Offset}");
-                defines.AddRaw($"MORPH_TARGET_COLOR_0_OFFSET {part.MorphTargetColor0Offset}");
+                if (part.HasMorphTargetPosition) {
+                    defines.Add("HAS_MORPH_TARGET_POSITION");
+                    defines.AddRaw($"MORPH_TARGET_POSITION_OFFSET {part.MorphTargetPositionOffset}");
+                }
+                if (part.HasMorphTargetNormal) {
+                    defines.Add("HAS_MORPH_TARGET_NORMAL");
+                    defines.AddRaw($"MORPH_TARGET_NORMAL_OFFSET {part.MorphTargetNormalOffset}");
+                }
+                if (part.HasMorphTargetTangent) {
+                    defines.Add("HAS_MORPH_TARGET_TANGENT");
+                    defines.AddRaw($"MORPH_TARGET_TANGENT_OFFSET {part.MorphTargetTangentOffset}");
+                }
+                if (part.HasMorphTargetTexCoord0) {
+                    defines.Add("HAS_MORPH_TARGET_TEXCOORD_0");
+                    defines.AddRaw($"MORPH_TARGET_TEXCOORD_0_OFFSET {part.MorphTargetTexCoord0Offset}");
+                }
+                if (part.HasMorphTargetTexCoord1) {
+                    defines.Add("HAS_MORPH_TARGET_TEXCOORD_1");
+                    defines.AddRaw($"MORPH_TARGET_TEXCOORD_1_OFFSET {part.MorphTargetTexCoord1Offset}");
+                }
+                if (part.HasMorphTargetColor0) {
+                    defines.Add("HAS_MORPH_TARGET_COLOR_0");
+                    defines.AddRaw($"MORPH_TARGET_COLOR_0_OFFSET {part.MorphTargetColor0Offset}");
+                }
                 break; // 第一个有 morph target 的 part 即可定义
             }
         }
@@ -502,7 +560,11 @@ namespace Game {
                 return;
             }
             for (int i = 0; i < part.MorphTargetCount && i < weights.Length; i++) {
-                int loc = GLWrapper.GL.GetUniformLocation((uint)programHandle, $"u_morphWeights[{i}]");
+                var cacheKey = (programHandle, i);
+                if (!_morphWeightLocationCache.TryGetValue(cacheKey, out int loc)) {
+                    loc = GLWrapper.GL.GetUniformLocation((uint)programHandle, $"u_morphWeights[{i}]");
+                    _morphWeightLocationCache[cacheKey] = loc;
+                }
                 if (loc >= 0) {
                     GLWrapper.GL.Uniform1(loc, weights[i]);
                 }
@@ -624,6 +686,8 @@ namespace Game {
             IblSampler?.Dispose();
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
+            _morphSamplerLocationCache.Clear();
+            _morphWeightLocationCache.Clear();
             CelestialBodyCache.Clear();
             base.Dispose();
         }

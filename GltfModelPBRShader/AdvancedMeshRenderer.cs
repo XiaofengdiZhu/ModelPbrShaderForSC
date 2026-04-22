@@ -191,6 +191,7 @@ namespace Game {
                 ToneMapMode = ToneMapMode.KhrPbrNeutral,
                 LightCount = 1,
                 EnableSkinning = false,
+                EnableMorphing = true,
                 LightDirection = lightDirection,
                 LightColor = lightColor
             };
