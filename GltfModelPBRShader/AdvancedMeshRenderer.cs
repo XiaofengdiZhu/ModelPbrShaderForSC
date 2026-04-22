@@ -361,9 +361,19 @@ namespace Game {
         /// 设置剔除模式
         /// 通过 ApplyRasterizerState 保持 GLWrapper 缓存同步
         /// </summary>
-        protected virtual void SetupCullMode(ModelMaterial material) => GLWrapper.ApplyRasterizerState(
-            material?.DoubleSided == true ? RasterizerState.CullNoneScissor : RasterizerState.CullCounterClockwiseScissor
-        );
+        protected virtual void SetupCullMode(ModelMaterial material, bool isNegativeScale = false) {
+            RasterizerState state;
+            if (material?.DoubleSided == true) {
+                state = RasterizerState.CullNoneScissor;
+            }
+            else if (isNegativeScale) {
+                state = RasterizerState.CullClockwiseScissor;
+            }
+            else {
+                state = RasterizerState.CullCounterClockwiseScissor;
+            }
+            GLWrapper.ApplyRasterizerState(state);
+        }
 
         /// <summary>
         /// 设置混合模式
