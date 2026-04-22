@@ -11,12 +11,21 @@ namespace Game {
     /// IBL 预处理器，用于生成预过滤的环境贴图
     /// </summary>
     public class IblSampler : IDisposable {
-        readonly int _textureSize = 256;
         readonly int _ggxSampleCount = 1024;
         readonly int _lambertianSampleCount = 2048;
-        readonly int _sheenSampleCount = 64;
         readonly int _lowestMipLevel = 4;
         readonly int _lutResolution = 1024;
+        readonly int _sheenSampleCount = 64;
+        readonly int _textureSize = 256;
+        uint _cubemapTexture;
+        uint _framebuffer;
+        uint _iblFilteringShader;
+        uint _iblFragShader;
+
+        uint _inputTexture;
+        uint _panoramaFragShader;
+        uint _panoramaToCubemapShader;
+        uint _panoramaVertShader;
 
         public uint LambertianTexture { get; private set; }
         public uint GGXTexture { get; private set; }
@@ -25,14 +34,47 @@ namespace Game {
         public uint CharlieLut { get; private set; }
         public int MipCount { get; private set; }
 
-        uint _inputTexture;
-        uint _cubemapTexture;
-        uint _framebuffer;
-        uint _panoramaToCubemapShader;
-        uint _iblFilteringShader;
-        uint _panoramaVertShader;
-        uint _panoramaFragShader;
-        uint _iblFragShader;
+        public void Dispose() {
+            if (_inputTexture != 0) {
+                GLWrapper.GL.DeleteTexture(_inputTexture);
+            }
+            if (_cubemapTexture != 0) {
+                GLWrapper.GL.DeleteTexture(_cubemapTexture);
+            }
+            if (LambertianTexture != 0) {
+                GLWrapper.GL.DeleteTexture(LambertianTexture);
+            }
+            if (GGXTexture != 0) {
+                GLWrapper.GL.DeleteTexture(GGXTexture);
+            }
+            if (SheenTexture != 0) {
+                GLWrapper.GL.DeleteTexture(SheenTexture);
+            }
+            if (GGXLut != 0) {
+                GLWrapper.GL.DeleteTexture(GGXLut);
+            }
+            if (CharlieLut != 0) {
+                GLWrapper.GL.DeleteTexture(CharlieLut);
+            }
+            if (_framebuffer != 0) {
+                GLWrapper.GL.DeleteFramebuffer(_framebuffer);
+            }
+            if (_panoramaToCubemapShader != 0) {
+                GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
+            }
+            if (_iblFilteringShader != 0) {
+                GLWrapper.GL.DeleteProgram(_iblFilteringShader);
+            }
+            if (_panoramaVertShader != 0) {
+                GLWrapper.GL.DeleteShader(_panoramaVertShader);
+            }
+            if (_panoramaFragShader != 0) {
+                GLWrapper.GL.DeleteShader(_panoramaFragShader);
+            }
+            if (_iblFragShader != 0) {
+                GLWrapper.GL.DeleteShader(_iblFragShader);
+            }
+        }
 
         /// <summary>
         /// 初始化并处理环境贴图
@@ -102,9 +144,7 @@ namespace Game {
         string LoadShaderSource(string shaderName) {
             string path = Storage.CombinePaths("GltfModelPbrShaders", shaderName);
             Stream stream = ContentManager.GetStream(path);
-            using (StreamReader reader = new(stream)) {
-                return reader.ReadToEnd();
-            }
+            return new StreamReader(stream).ReadToEnd();
         }
 
         uint CompileShader(string source, bool isVertex, string name) {
@@ -383,48 +423,6 @@ namespace Game {
             GLWrapper.GL.Uniform1(u_floatTextureLoc, 1);
             GLWrapper.GL.Uniform1(u_intensityScaleLoc, 1.0f);
             GLWrapper.GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-        }
-
-        public void Dispose() {
-            if (_inputTexture != 0) {
-                GLWrapper.GL.DeleteTexture(_inputTexture);
-            }
-            if (_cubemapTexture != 0) {
-                GLWrapper.GL.DeleteTexture(_cubemapTexture);
-            }
-            if (LambertianTexture != 0) {
-                GLWrapper.GL.DeleteTexture(LambertianTexture);
-            }
-            if (GGXTexture != 0) {
-                GLWrapper.GL.DeleteTexture(GGXTexture);
-            }
-            if (SheenTexture != 0) {
-                GLWrapper.GL.DeleteTexture(SheenTexture);
-            }
-            if (GGXLut != 0) {
-                GLWrapper.GL.DeleteTexture(GGXLut);
-            }
-            if (CharlieLut != 0) {
-                GLWrapper.GL.DeleteTexture(CharlieLut);
-            }
-            if (_framebuffer != 0) {
-                GLWrapper.GL.DeleteFramebuffer(_framebuffer);
-            }
-            if (_panoramaToCubemapShader != 0) {
-                GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
-            }
-            if (_iblFilteringShader != 0) {
-                GLWrapper.GL.DeleteProgram(_iblFilteringShader);
-            }
-            if (_panoramaVertShader != 0) {
-                GLWrapper.GL.DeleteShader(_panoramaVertShader);
-            }
-            if (_panoramaFragShader != 0) {
-                GLWrapper.GL.DeleteShader(_panoramaFragShader);
-            }
-            if (_iblFragShader != 0) {
-                GLWrapper.GL.DeleteShader(_iblFragShader);
-            }
         }
     }
 }

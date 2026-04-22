@@ -19,6 +19,9 @@ namespace Game {
         // 缓存已应用的 sampler，避免重复 GL 调用
         static readonly Dictionary<int, SamplerState> _appliedSamplers = new();
 
+        // 缓存纹理槽位 uniform location，避免每帧重复 GetUniformLocation
+        static readonly Dictionary<int, int[]> _slotUniformLocations = new();
+
         /// <summary>
         /// 纹理槽位 uniform 映射
         /// (槽位, 纹理 uniform 名称, 采样器 uniform 名称)
@@ -75,18 +78,26 @@ namespace Game {
 
         /// <summary>
         /// 设置纹理槽位 uniform（不存在的槽位静默跳过）
-        /// TODO: sampler2D uniform 需要用 glUniform1i 直接设置，需要改进
+        /// uniform location 按 program handle 缓存，避免重复 GL 查询
         /// </summary>
         public static void SetTextureSlotUniforms(Shader shader) {
-            uint program = (uint)shader.m_program;
-            foreach ((MaterialTextureSlot slot, string texUniform, string samplerUniform) in SlotUniforms) {
-                int slotValue = (int)slot;
-                // 使用原始 GL 调用设置纹理槽位（兼容 sampler2D、samplerCube 等所有类型）
-                int texLoc = GLWrapper.GL.GetUniformLocation(program, texUniform);
+            int programHandle = shader.m_program;
+            if (!_slotUniformLocations.TryGetValue(programHandle, out int[] locations)) {
+                uint program = (uint)programHandle;
+                locations = new int[SlotUniforms.Length * 2];
+                for (int i = 0; i < SlotUniforms.Length; i++) {
+                    locations[i * 2] = GLWrapper.GL.GetUniformLocation(program, SlotUniforms[i].texUniform);
+                    locations[i * 2 + 1] = GLWrapper.GL.GetUniformLocation(program, SlotUniforms[i].samplerUniform);
+                }
+                _slotUniformLocations[programHandle] = locations;
+            }
+            for (int i = 0; i < SlotUniforms.Length; i++) {
+                int slotValue = (int)SlotUniforms[i].slot;
+                int texLoc = locations[i * 2];
                 if (texLoc >= 0) {
                     GLWrapper.GL.Uniform1(texLoc, slotValue);
                 }
-                int samplerLoc = GLWrapper.GL.GetUniformLocation(program, samplerUniform);
+                int samplerLoc = locations[i * 2 + 1];
                 if (samplerLoc >= 0) {
                     GLWrapper.GL.Uniform1(samplerLoc, slotValue);
                 }
@@ -214,6 +225,14 @@ namespace Game {
             TextureUnit unit = (TextureUnit)((int)TextureUnit.Texture0 + (int)slot);
             GLWrapper.ActiveTexture(unit);
             GLWrapper.BindTexture(TextureTarget.Texture2D, (int)textureHandle, true);
+        }
+
+        /// <summary>
+        /// 重置帧级缓存（每帧 BeginFrame 调用）
+        /// 防止 texture handle 复用导致 stale sampler state
+        /// </summary>
+        public static void ResetFrameState() {
+            _appliedSamplers.Clear();
         }
 
         /// <summary>

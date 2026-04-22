@@ -4,6 +4,7 @@ using System.IO;
 using Engine;
 using Engine.Graphics;
 using Engine.Media;
+using Silk.NET.OpenGLES;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
 
@@ -27,10 +28,10 @@ namespace Game {
         // PBR 材质 UBO（原 PbrMeshRenderer）
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
         readonly UniformBuffer<MaterialExtensionData> _materialExtUBO = new(6);
-        Texture2D _currentTextureOverride;
-        bool _shadersLoaded;
         readonly Dictionary<int, int> _morphSamplerLocationCache = [];
         readonly Dictionary<(int programHandle, int weightIndex), int> _morphWeightLocationCache = [];
+        Texture2D _currentTextureOverride;
+        bool _shadersLoaded;
 
         public IblSampler IblSampler { get; private set; }
 
@@ -278,7 +279,8 @@ namespace Game {
                             _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = inst.WorldMatrix;
                             _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
                             negCount++;
-                        } else {
+                        }
+                        else {
                             _instanceMatrices[posCount] = inst.WorldMatrix;
                             _instanceLightData[posCount] = light;
                             posCount++;
@@ -391,9 +393,8 @@ namespace Game {
             ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
             defines.AddRaw($"ALPHAMODE {(int)alphaMode}");
             // 根据工作流选择片段着色器
-            string fragShader = context.IsScatterPass ? "scatter.frag"
-                : material?.SpecularGlossiness?.IsEnabled == true ? "specular_glossiness.frag"
-                : "pbr.frag";
+            string fragShader = context.IsScatterPass ? "scatter.frag" :
+                material?.SpecularGlossiness?.IsEnabled == true ? "specular_glossiness.frag" : "pbr.frag";
             try {
                 int vertHash = ShaderCache.SelectShader("primitive.vert", defines);
                 int fragHash = ShaderCache.SelectShader(fragShader, defines);
@@ -482,11 +483,15 @@ namespace Game {
         }
 
         static int ComputeMorphHash(ModelMesh mesh) {
-            if (!HasMorphTargetData(mesh)) return 0;
+            if (!HasMorphTargetData(mesh)) {
+                return 0;
+            }
             unchecked {
                 int hash = "__MORPH__".GetHashCode();
                 foreach (ModelMeshPart part in mesh.MeshParts) {
-                    if (part?.HasMorphTargets != true) continue;
+                    if (part?.HasMorphTargets != true) {
+                        continue;
+                    }
                     hash = hash * 31 + part.MorphTargetCount;
                     hash = hash * 31 + (part.HasMorphTargetPosition ? 1 : 0);
                     hash = hash * 31 + (part.HasMorphTargetNormal ? 1 : 0);
@@ -546,7 +551,7 @@ namespace Game {
             if (part?.HasMorphTargets != true) {
                 return;
             }
-            part.MorphTargetTexture.Bind((Silk.NET.OpenGLES.TextureUnit)((int)Silk.NET.OpenGLES.TextureUnit.Texture0 + (int)MaterialTextureSlot.MorphTargets));
+            part.MorphTargetTexture.Bind((TextureUnit)((int)TextureUnit.Texture0 + (int)MaterialTextureSlot.MorphTargets));
             int programHandle = shader.m_program;
             if (!_morphSamplerLocationCache.TryGetValue(programHandle, out int samplerLoc)) {
                 samplerLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_MorphTargetsSampler");
@@ -560,7 +565,7 @@ namespace Game {
                 return;
             }
             for (int i = 0; i < part.MorphTargetCount && i < weights.Length; i++) {
-                var cacheKey = (programHandle, i);
+                (int programHandle, int i) cacheKey = (programHandle, i);
                 if (!_morphWeightLocationCache.TryGetValue(cacheKey, out int loc)) {
                     loc = GLWrapper.GL.GetUniformLocation((uint)programHandle, $"u_morphWeights[{i}]");
                     _morphWeightLocationCache[cacheKey] = loc;

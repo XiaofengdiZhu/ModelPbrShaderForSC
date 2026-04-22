@@ -223,6 +223,7 @@ namespace Game {
             // 重置材质缓存
             LastMaterial = null;
             UvTransformDirty = true;
+            MaterialTextureBinder.ResetFrameState();
         }
 
         public abstract void RenderInstances(List<InstanceRenderData> instances);
