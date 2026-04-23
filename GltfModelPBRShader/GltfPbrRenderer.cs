@@ -24,6 +24,8 @@ namespace Game {
             MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One
         };
 
+        static readonly Comparison<PartRenderEntry> BackToFrontComparison = (a, b) => b.Depth.CompareTo(a.Depth);
+
         static readonly ModelMaterial DefaultDielectricBlendMaterial = new() {
             MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One, AlphaMode = ModelAlphaMode.Mask, AlphaCutoff = 0.01f
         };
@@ -48,6 +50,7 @@ namespace Game {
         readonly Dictionary<int, (int sizeLoc, int screenLoc)> _transmissionSizeLocCache = [];
         readonly List<PartRenderEntry> _transparentAfterWater = [];
         readonly List<PartRenderEntry> _transparentBeforeWater = [];
+        readonly List<PartRenderEntry> _allTransparentEntries = [];
         readonly List<PartRenderEntry> _skinnedOpaqueEntries = [];        readonly UniformBuffer<VolumeScatterData> _volumeScatterUBO = new(5);
         Shader _currentInstanceShader;
         bool _hasTransmissionThisFrame;
@@ -136,8 +139,10 @@ namespace Game {
             _scatterEntries.Clear();
             _transparentBeforeWater.Clear();
             _transparentAfterWater.Clear();
+            _allTransparentEntries.Clear();
             _hasTransmissionThisFrame = false;
             _transmissionFboCaptured = false;
+            _transparentRendered = false;
             Viewport vp = Display.Viewport;
             _framebufferManager.SetSize(vp.Width, vp.Height);
             foreach (SubsystemModelsRenderer.ModelData md in allModels) {
@@ -271,25 +276,31 @@ namespace Game {
                 RenderOpaqueBatched(camera);
             }
 
-            // 注意：Transmission FBO 捕获移至 RenderTransparentPass
-            // SC 天空在 drawOrder 5 渲染（晚于 drawOrder 1 的 opaque pass）
-            // 必须在 drawOrder 99 时捕获才能包含天空
+            // 注意：Transmission FBO 捕获在 RenderTransparentPass(drawOrder 150) 执行
+            // SC 天空 drawOrder 5，水面 drawOrder ~100，都在 150 之前
         }
 
         bool _transmissionFboCaptured;
+        bool _transparentRendered;
 
         public override void RenderTransparentPass(Camera camera, bool underwater) {
-            // Transmission FBO 捕获（仅第一次，drawOrder 99 时天空已渲染）
+            // drawOrder 150 被调用两次(underwater=false/true)，只在第一次执行全部透明渲染
+            if (_transparentRendered) return;
+            _transparentRendered = true;
+
+            // Transmission FBO 捕获（drawOrder 150 时天空和水面都已渲染）
             if (_hasTransmissionThisFrame && !_transmissionFboCaptured) {
                 _transmissionFboCaptured = true;
                 _framebufferManager.EnsureTransmissionFramebuffer();
                 _framebufferManager.Transmission.BlitFromBackbuffer(Display.Viewport.Width, Display.Viewport.Height);
                 _framebufferManager.GenerateTransmissionMipmap();
             }
-            List<PartRenderEntry> entries = underwater ? _transparentAfterWater : _transparentBeforeWater;
-            if (entries.Count == 0) {
-                return;
-            }
+
+            // 合并 before/after water 列表到独立列表，统一排序渲染
+            _allTransparentEntries.AddRange(_transparentBeforeWater);
+            _allTransparentEntries.AddRange(_transparentAfterWater);
+            List<PartRenderEntry> entries = _allTransparentEntries;
+            if (entries.Count == 0) return;
 
             // 计算深度用于 back-to-front 排序
             Matrix viewMatrix = camera.ViewMatrix;
@@ -302,7 +313,7 @@ namespace Game {
                 entry.Depth = viewPos.Z;
                 entries[i] = entry;
             }
-            entries.Sort((a, b) => b.Depth.CompareTo(a.Depth));
+            entries.Sort(BackToFrontComparison);
 
             // 渲染
             foreach (PartRenderEntry entry in entries) {
