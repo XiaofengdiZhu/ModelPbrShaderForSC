@@ -160,6 +160,7 @@ namespace Game {
                         continue;
                     }
                     ModelMesh mesh = model.Meshes[meshIndex];
+                    if (!mesh.IsVisible) continue;
                     foreach (ModelMeshPart part in mesh.MeshParts) {
                         ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
                         PartRenderQueue queueType = PartRenderEntry.ComputeQueueType(mat);
@@ -659,7 +660,8 @@ namespace Game {
 
         void UpdateMaterialUBOs(ModelMaterial material, bool useGeneratedTangents) {
             int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
-            if (LastMaterial != material) {
+            if (LastMaterial != material || LastMaterialVersion != material.Version) {
+                LastMaterialVersion = material.Version;
                 MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, useGeneratedTangents);
                 _materialCoreUBO.Update(ref coreData);
                 MaterialExtensionData extData = MaterialUboBuilder.BuildMaterialExtensionData(material);

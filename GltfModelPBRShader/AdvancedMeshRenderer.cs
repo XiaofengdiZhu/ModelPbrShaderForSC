@@ -105,6 +105,7 @@ namespace Game {
 
         // 材质缓存状态（子类可访问）
         protected ModelMaterial LastMaterial;
+        protected int LastMaterialVersion = -1;
         protected UniformBuffer<LightsData> LightsUBO;
 
         // 渲染状态
@@ -261,6 +262,7 @@ namespace Game {
 
             // 重置材质缓存
             LastMaterial = null;
+            LastMaterialVersion = -1;
             UvTransformDirty = true;
             MaterialTextureBinder.ResetFrameState();
         }
