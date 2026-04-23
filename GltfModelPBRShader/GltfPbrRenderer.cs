@@ -31,6 +31,7 @@ namespace Game {
         };
 
         static readonly int InstancedHashSalt = "__INSTANCED__".GetHashCode();
+        readonly List<PartRenderEntry> _allTransparentEntries = [];
         readonly PbrFramebufferManager _framebufferManager = new();
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> _instanceGroups = new();
 
@@ -46,12 +47,12 @@ namespace Game {
         readonly List<PartRenderEntry> _scatterEntries = [];
         readonly Dictionary<int, int> _scatterSamplerLocCache = [];
         readonly HashSet<int> _scatterSamplesSetShaders = [];
+        readonly List<PartRenderEntry> _skinnedOpaqueEntries = [];
         readonly Dictionary<int, int> _transmissionSamplerLocCache = [];
         readonly Dictionary<int, (int sizeLoc, int screenLoc)> _transmissionSizeLocCache = [];
         readonly List<PartRenderEntry> _transparentAfterWater = [];
         readonly List<PartRenderEntry> _transparentBeforeWater = [];
-        readonly List<PartRenderEntry> _allTransparentEntries = [];
-        readonly List<PartRenderEntry> _skinnedOpaqueEntries = [];        readonly UniformBuffer<VolumeScatterData> _volumeScatterUBO = new(5);
+        readonly UniformBuffer<VolumeScatterData> _volumeScatterUBO = new(5);
         Shader _currentInstanceShader;
         bool _hasTransmissionThisFrame;
         bool _shadersLoaded;
@@ -285,7 +286,9 @@ namespace Game {
 
         public override void RenderTransparentPass(Camera camera, bool underwater) {
             // drawOrder 150 被调用两次(underwater=false/true)，只在第一次执行全部透明渲染
-            if (_transparentRendered) return;
+            if (_transparentRendered) {
+                return;
+            }
             _transparentRendered = true;
 
             // Transmission FBO 捕获（drawOrder 150 时天空和水面都已渲染）
@@ -300,7 +303,9 @@ namespace Game {
             _allTransparentEntries.AddRange(_transparentBeforeWater);
             _allTransparentEntries.AddRange(_transparentAfterWater);
             List<PartRenderEntry> entries = _allTransparentEntries;
-            if (entries.Count == 0) return;
+            if (entries.Count == 0) {
+                return;
+            }
 
             // 计算深度用于 back-to-front 排序
             Matrix viewMatrix = camera.ViewMatrix;
@@ -711,7 +716,11 @@ namespace Game {
             return CreateShaderVariantInternal(mesh, material, context, true, hasTextureOverride);
         }
 
-        Shader CreateShaderVariantInternal(ModelMesh mesh, ModelMaterial material, RenderContext context, bool isInstanced, bool hasTextureOverride = false) {
+        Shader CreateShaderVariantInternal(ModelMesh mesh,
+            ModelMaterial material,
+            RenderContext context,
+            bool isInstanced,
+            bool hasTextureOverride = false) {
             ShaderDefines defines = new();
             AddVertexAttributeDefines(defines, mesh);
             if (isInstanced) {

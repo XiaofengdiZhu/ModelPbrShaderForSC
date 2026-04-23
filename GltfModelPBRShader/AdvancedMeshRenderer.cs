@@ -36,9 +36,16 @@ namespace Game {
         public float Depth;
 
         public static PartRenderQueue ComputeQueueType(ModelMaterial mat) {
-            if (mat?.VolumeScatter?.IsEnabled == true && mat?.DiffuseTransmission?.IsEnabled == true) return PartRenderQueue.Scatter;
-            if (mat?.Transmission?.IsEnabled == true) return PartRenderQueue.Transmission;
-            if (mat?.AlphaMode == ModelAlphaMode.Blend) return PartRenderQueue.Transparent;
+            if (mat?.VolumeScatter?.IsEnabled == true
+                && mat?.DiffuseTransmission?.IsEnabled == true) {
+                return PartRenderQueue.Scatter;
+            }
+            if (mat?.Transmission?.IsEnabled == true) {
+                return PartRenderQueue.Transmission;
+            }
+            if (mat?.AlphaMode == ModelAlphaMode.Blend) {
+                return PartRenderQueue.Transparent;
+            }
             return PartRenderQueue.Opaque;
         }
     }
@@ -420,7 +427,7 @@ namespace Game {
                 return;
             }
             ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
-            GLWrapper.ApplyBlendState(alphaMode == ModelAlphaMode.Blend ? BlendState.AlphaBlend : BlendState.Opaque);
+            GLWrapper.ApplyBlendState(alphaMode == ModelAlphaMode.Blend ? BlendState.NonPremultiplied : BlendState.Opaque);
         }
 
         /// <summary>
