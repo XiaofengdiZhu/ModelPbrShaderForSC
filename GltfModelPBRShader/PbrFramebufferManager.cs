@@ -69,7 +69,15 @@ namespace Game {
 
         public void ClearScatter() => _scatter?.ClearTransparent();
 
-        public void GenerateTransmissionMipmap() => _transmission?.GenerateMipMaps();
+        public void GenerateTransmissionMipmap() {
+            if (_transmission == null) return;
+            _transmission.GenerateMipMaps();
+            // glGenerateMipmap 生成的 mip 层数有限，但 GL_TEXTURE_MAX_LEVEL 默认 1000
+            // textureLod 采样超出实际层数时返回黑色，必须限制到实际最大层数
+            int maxLevel = (int)Math.Floor(Math.Log2(Math.Max(Width, Height)));
+            GLWrapper.BindTexture(TextureTarget.Texture2D, _transmission.m_texture, false);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, maxLevel);
+        }
 
         public void BlitBackbufferToTransmission(int screenWidth, int screenHeight) =>
             _transmission?.BlitFromBackbuffer(screenWidth, screenHeight);
