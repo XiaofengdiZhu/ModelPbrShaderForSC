@@ -392,7 +392,7 @@ namespace Game {
 
             // GL 状态
             SetupDepthState(effectiveMaterial);
-            SetupCullMode(effectiveMaterial, DetectNegativeScale(entry.ModelData));
+            SetupCullMode(effectiveMaterial, GetBoneTransformForEntry(entry).Determinant() < 0f);
             SetupBlendMode(effectiveMaterial, CurrentContext);
             SetupTransmissionUniforms(effectiveMaterial, shader);
             SetupVolumeScatterUniforms(effectiveMaterial, shader);
@@ -672,17 +672,6 @@ namespace Game {
                 _materialExtUBO.Update(ref extData);
                 LastExtensionFlags = extensionFlags;
             }
-        }
-
-        static bool DetectNegativeScale(SubsystemModelsRenderer.ModelData modelData) {
-            if (modelData?.ComponentModel?.Model == null) {
-                return false;
-            }
-            Matrix? boneTransform = modelData.ComponentModel.GetBoneTransform(modelData.ComponentModel.Model.RootBone.Index);
-            if (!boneTransform.HasValue) {
-                return false;
-            }
-            return boneTransform.Value.Determinant() < 0f;
         }
 
         #endregion
