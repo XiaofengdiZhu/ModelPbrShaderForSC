@@ -402,10 +402,23 @@ namespace Game {
 
                 foreach (ModelLight ml in model.Lights) {
                     if (!ml.IsVisible) continue;
-                    var localPos = new System.Numerics.Vector3(ml.Position.X, ml.Position.Y, ml.Position.Z);
-                    var localDir = new System.Numerics.Vector3(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
-                    var viewPos = System.Numerics.Vector3.Transform(localPos, viewMatrix);
-                    var viewDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(localDir, viewMatrix));
+
+                    System.Numerics.Vector3 viewPos;
+                    System.Numerics.Vector3 viewDir;
+
+                    if (ml.BoneIndex >= 0 && ml.BoneIndex < cm.AbsoluteBoneTransformsForCamera.Length) {
+                        // 动画驱动的灯光：直接从骨骼变换提取 view space 位置/方向
+                        // 灯光在骨骼原点，方向为骨骼的 -Z 轴（glTF 约定）
+                        Matrix4x4 boneMatrix = cm.AbsoluteBoneTransformsForCamera[ml.BoneIndex];
+                        viewPos = new System.Numerics.Vector3(boneMatrix.M41, boneMatrix.M42, boneMatrix.M43);
+                        viewDir = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(-boneMatrix.M31, -boneMatrix.M32, -boneMatrix.M33));
+                    } else {
+                        // 静态灯光：ml.Position/Direction 在 glTF world space，用 root bone 变换到 view space
+                        var localPos = new System.Numerics.Vector3(ml.Position.X, ml.Position.Y, ml.Position.Z);
+                        var localDir = new System.Numerics.Vector3(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
+                        viewPos = System.Numerics.Vector3.Transform(localPos, viewMatrix);
+                        viewDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(localDir, viewMatrix));
+                    }
 
                     _collectedLights.Add(new CollectedLight {
                         ViewPosition = new Vector3(viewPos.X, viewPos.Y, viewPos.Z),
