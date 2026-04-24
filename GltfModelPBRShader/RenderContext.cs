@@ -50,9 +50,9 @@ namespace Game {
         public ToneMapMode ToneMapMode { get; set; }
 
         /// <summary>
-        /// 光源数量
+        /// 是否启用 punctual lighting shader 变体（USE_PUNCTUAL）
         /// </summary>
-        public int LightCount { get; set; }
+        public bool HasPunctualLight { get; set; }
 
         /// <summary>
         /// Debug 渲染通道

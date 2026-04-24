@@ -92,7 +92,7 @@ namespace Game {
 
         // 实例化渲染
         int _instanceVBO;
-        (bool useIBL, bool useLinearOutput, ToneMapMode toneMapMode, int lightCount, DebugChannel debugChannel) _lastContextParams;
+        (bool useIBL, bool useLinearOutput, ToneMapMode toneMapMode, bool hasPunctualLight, DebugChannel debugChannel) _lastContextParams;
 
         // 子系统引用
         protected SubsystemModelsRenderer _subsystemModelsRenderer;
@@ -100,6 +100,21 @@ namespace Game {
         protected SubsystemTerrain _subsystemTerrain;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
         Vector3 _viewLightDir;
+
+        // 全局灯光（每帧收集，按距相机距离排序）
+        protected struct CollectedLight {
+            public Vector3 ViewPosition;
+            public Vector3 ViewDirection;
+            public Vector3 Color;
+            public float Intensity;
+            public float Range;
+            public int Type;
+            public float InnerConeCos;
+            public float OuterConeCos;
+            public float DistanceSq;
+        }
+        protected List<CollectedLight> _collectedLights = [];
+        HashSet<ComponentModel> _collectedLightModels = [];
         protected RenderContext CurrentContext = new();
         protected int LastExtensionFlags;
 
@@ -229,7 +244,7 @@ namespace Game {
             CurrentContext.UseLinearOutput = false;
             CurrentContext.IsScatterPass = false;
             CurrentContext.ToneMapMode = ToneMapMode.KhrPbrNeutral;
-            CurrentContext.LightCount = 1;
+            CurrentContext.HasPunctualLight = false;
             CurrentContext.DebugChannel = DebugChannel.None;
             CurrentContext.EnableSkinning = false;
             CurrentContext.EnableMorphing = true;
@@ -368,12 +383,80 @@ namespace Game {
         }
 
         /// <summary>
-        /// 更新光照 UBO（逐模型光照强度缩放）
+        /// 从所有可见模型收集 glTF 灯光到全局列表（view space，按距相机距离排序）
+        /// 在 PrepareCustomQueues 末尾调用
+        /// </summary>
+        protected void CollectGlobalLights(List<SubsystemModelsRenderer.ModelData> allModels) {
+            _collectedLights.Clear();
+            _collectedLightModels.Clear();
+            foreach (SubsystemModelsRenderer.ModelData md in allModels) {
+                ComponentModel cm = md.ComponentModel;
+                if (cm == null || !_collectedLightModels.Add(cm)) continue;
+                Model model = cm.Model;
+                if (model == null || model.Lights.Count == 0) continue;
+
+                Matrix wm = md.ComponentModel.AbsoluteBoneTransformsForCamera.Length > 0
+                    ? md.ComponentModel.AbsoluteBoneTransformsForCamera[0]
+                    : Engine.Matrix.Identity;
+                Matrix4x4 viewMatrix = wm;
+
+                foreach (ModelLight ml in model.Lights) {
+                    if (!ml.IsVisible) continue;
+                    var localPos = new System.Numerics.Vector3(ml.Position.X, ml.Position.Y, ml.Position.Z);
+                    var localDir = new System.Numerics.Vector3(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
+                    var viewPos = System.Numerics.Vector3.Transform(localPos, viewMatrix);
+                    var viewDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(localDir, viewMatrix));
+
+                    _collectedLights.Add(new CollectedLight {
+                        ViewPosition = new Vector3(viewPos.X, viewPos.Y, viewPos.Z),
+                        ViewDirection = new Vector3(viewDir.X, viewDir.Y, viewDir.Z),
+                        Color = ml.Color,
+                        Intensity = ml.Intensity,
+                        Range = ml.Range,
+                        Type = (int)ml.Type,
+                        InnerConeCos = ml.InnerConeCos,
+                        OuterConeCos = ml.OuterConeCos,
+                        DistanceSq = viewPos.LengthSquared()
+                    });
+                }
+            }
+            _collectedLights.Sort((a, b) => a.DistanceSq.CompareTo(b.DistanceSq));
+            if (_collectedLights.Count > ModelLight.MaxPunctualLights) {
+                _collectedLights.RemoveRange(ModelLight.MaxPunctualLights, _collectedLights.Count - ModelLight.MaxPunctualLights);
+            }
+        }
+        /// 更新光照 UBO：太阳/月亮 + 全局 glTF 灯光
         /// </summary>
         protected void UpdateLightsUBO(float intensity) {
             LightsData lightsData = new() {
-                LightCount = 1, Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
+                LightCount = 1,
+                Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
             };
+
+            for (int i = 0; i < _collectedLights.Count && lightsData.LightCount <= 7; i++) {
+                CollectedLight cl = _collectedLights[i];
+                LightData ld = new() {
+                    Direction = cl.ViewDirection,
+                    Color = cl.Color,
+                    Intensity = cl.Intensity,
+                    Position = cl.ViewPosition,
+                    Type = cl.Type,
+                    Range = cl.Range,
+                    InnerConeCos = cl.InnerConeCos,
+                    OuterConeCos = cl.OuterConeCos
+                };
+                switch (lightsData.LightCount) {
+                    case 1: lightsData.Light1 = ld; break;
+                    case 2: lightsData.Light2 = ld; break;
+                    case 3: lightsData.Light3 = ld; break;
+                    case 4: lightsData.Light4 = ld; break;
+                    case 5: lightsData.Light5 = ld; break;
+                    case 6: lightsData.Light6 = ld; break;
+                    case 7: lightsData.Light7 = ld; break;
+                }
+                lightsData.LightCount++;
+            }
+
             LightsUBO.Update(ref lightsData);
         }
 
@@ -624,8 +707,8 @@ namespace Game {
         }
 
         protected void UpdateContextHash(RenderContext context) {
-            (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, int LightCount, DebugChannel DebugChannel) contextParams = (context.UseIBL,
-                context.UseLinearOutput, context.ToneMapMode, context.LightCount, context.DebugChannel);
+            (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, bool HasPunctualLight, DebugChannel DebugChannel) contextParams = (context.UseIBL,
+                context.UseLinearOutput, context.ToneMapMode, context.HasPunctualLight, context.DebugChannel);
             if (_lastContextParams == contextParams) {
                 return;
             }
@@ -642,7 +725,7 @@ namespace Game {
                 if (context.UseIBL) {
                     hash = hash * 31 + "USE_IBL 1".GetHashCode();
                 }
-                if (context.LightCount > 0) {
+                if (context.HasPunctualLight) {
                     hash = hash * 31 + "USE_PUNCTUAL 1".GetHashCode();
                 }
                 if (context.UseLinearOutput) {
@@ -670,6 +753,15 @@ namespace Game {
         /// - DiffuseTransmission 强制启用 IBL
         /// - Unlit 材质移除 USE_PUNCTUAL
         /// </summary>
+        /// <summary>
+        /// 设置灯光数量并更新上下文 hash（shader 变体选择用）
+        /// </summary>
+        protected void SetHasPunctualLight(bool value) {
+            if (CurrentContext.HasPunctualLight == value) return;
+            CurrentContext.HasPunctualLight = value;
+            CachedContextHash = ComputeContextHash(CurrentContext);
+        }
+
         protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, RenderContext context) {
             unchecked {
                 if (material?.DiffuseTransmission?.IsEnabled == true
@@ -677,7 +769,7 @@ namespace Game {
                     contextHash ^= "USE_IBL 1".GetHashCode();
                 }
                 if (material?.Unlit?.IsEnabled == true
-                    && context.LightCount > 0) {
+                    && context.HasPunctualLight) {
                     contextHash ^= "USE_PUNCTUAL 1".GetHashCode();
                 }
                 return contextHash;

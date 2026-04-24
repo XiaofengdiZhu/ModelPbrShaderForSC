@@ -308,11 +308,15 @@ void main()
         vec3 metal_fresnel = F_Schlick(baseColor.rgb, vec3(1.0), abs(VdotH));
 
         vec3 lightIntensity = getLighIntensity(light, pointToLight);
+        // Only apply celestial body visibility to directional lights (sun/moon),
+        // not to glTF model punctual lights
+        if (light.type == LightType_Directional) {
 #ifdef USE_INSTANCING
-        lightIntensity *= v_instanceLight.y;
+            lightIntensity *= v_instanceLight.y;
 #else
-        lightIntensity *= u_CelestialBody;
+            lightIntensity *= u_CelestialBody;
 #endif
+        }
 
         vec3 l_diffuse = lightIntensity * NdotL * BRDF_lambertian(baseColor.rgb);
         vec3 l_specular_dielectric = vec3(0.0);
@@ -366,11 +370,13 @@ void main()
         // Calculation of analytical light
         // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
         vec3 intensity = getLighIntensity(light, pointToLight);
+        if (light.type == LightType_Directional) {
 #ifdef USE_INSTANCING
-        intensity *= v_instanceLight.y;
+            intensity *= v_instanceLight.y;
 #else
-        intensity *= u_CelestialBody;
+            intensity *= u_CelestialBody;
 #endif
+        }
 
         #ifdef MATERIAL_ANISOTROPY
         l_specular_metal = intensity * NdotL * BRDF_specularGGXAnisotropy(materialInfo.alphaRoughness, materialInfo.anisotropyStrength, n, v, l, h, materialInfo.anisotropicT, materialInfo.anisotropicB);

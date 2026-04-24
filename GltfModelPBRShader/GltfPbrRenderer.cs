@@ -194,6 +194,7 @@ namespace Game {
                     }
                 }
             }
+            CollectGlobalLights(allModels);
         }
 
         #endregion
@@ -348,6 +349,7 @@ namespace Game {
                 smr.m_jointTexture.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
             }
             ModelMaterial effectiveMaterial = GetEffectiveMaterial(entry);
+            SetHasPunctualLight(GetCelestialBodyVisible(entry.ModelData) || _collectedLights.Count > 0);
             Shader shader;
             if (hasSkin) {
                 shader = GetOrCreateShader(entry.Mesh, effectiveMaterial, CurrentContext);
@@ -441,8 +443,16 @@ namespace Game {
                     effectiveMaterial = textureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
                 }
                 else {
-                    effectiveMaterial = null;
+                    effectiveMaterial = DefaultDielectricMaterial;
                 }
+                // 动态设置 HasPunctualLight：有太阳/月亮或有全局 glTF 灯光时启用 USE_PUNCTUAL
+                bool hasLights = _collectedLights.Count > 0;
+                if (!hasLights) {
+                    for (int gi = 0; gi < groupEntries.Count; gi++) {
+                        if (GetCelestialBodyVisible(groupEntries[gi].ModelData)) { hasLights = true; break; }
+                    }
+                }
+                SetHasPunctualLight(hasLights);
                 Shader shader = GetOrCreateInstancedShader(mesh, effectiveMaterial, CurrentContext, textureOverride != null);
                 if (shader == null) {
                     continue;
@@ -458,12 +468,14 @@ namespace Game {
                 Model model = groupEntries[0].ModelData.ComponentModel.Model;
                 if (textureOverride != null) {
                     MaterialTextureBinder.BindTexture2D(textureOverride, MaterialTextureSlot.BaseColor);
-                    MaterialTextureBinder.SetTextureSlotUniforms(shader);
                 }
                 else if (model != null
                     && material != null) {
                     BindMaterialTextures(model, material, shader, null);
                 }
+                // sampler uniform locations 必须在每次 shader bind 后设置，
+                // 否则 IBL 等纹理 slot 会指向错误的 texture unit
+                MaterialTextureBinder.SetTextureSlotUniforms(shader);
                 if (IblSampler != null
                     && CurrentContext.UseIBL) {
                     BindIBLTextures();
@@ -557,25 +569,7 @@ namespace Game {
         }
 
         static Matrix4x4 GetWorldMatrixForEntry(PartRenderEntry entry) {
-            Matrix boneTransform = GetBoneTransformForEntry(entry);
-            return new Matrix4x4(
-                boneTransform.M11,
-                boneTransform.M12,
-                boneTransform.M13,
-                boneTransform.M14,
-                boneTransform.M21,
-                boneTransform.M22,
-                boneTransform.M23,
-                boneTransform.M24,
-                boneTransform.M31,
-                boneTransform.M32,
-                boneTransform.M33,
-                boneTransform.M34,
-                boneTransform.M41,
-                boneTransform.M42,
-                boneTransform.M43,
-                boneTransform.M44
-            );
+            return GetBoneTransformForEntry(entry);
         }
 
         ModelMaterial GetEffectiveMaterial(PartRenderEntry entry) {
@@ -585,7 +579,7 @@ namespace Game {
             if (entry.TextureOverride != null) {
                 return entry.TextureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
             }
-            return null;
+            return DefaultDielectricMaterial;
         }
 
         void EnsureJointTexture(Model model) {
@@ -638,7 +632,6 @@ namespace Game {
         void BindTexturesForEntry(PartRenderEntry entry, ModelMaterial effectiveMaterial, Shader shader) {
             if (entry.TextureOverride != null) {
                 MaterialTextureBinder.BindTexture2D(entry.TextureOverride, MaterialTextureSlot.BaseColor);
-                MaterialTextureBinder.SetTextureSlotUniforms(shader);
             }
             else if (entry.Material != null) {
                 Model model = entry.ModelData.ComponentModel?.Model;
@@ -646,6 +639,9 @@ namespace Game {
                     BindMaterialTextures(model, entry.Material, shader, null);
                 }
             }
+            // sampler uniform locations 必须在每次 shader bind 后设置，
+            // 否则 IBL 等纹理 slot 会指向错误的 texture unit
+            MaterialTextureBinder.SetTextureSlotUniforms(shader);
         }
 
         void BindIBLTextures() {
@@ -659,6 +655,7 @@ namespace Game {
         }
 
         void UpdateMaterialUBOs(ModelMaterial material, bool useGeneratedTangents) {
+            if (material == null) return;
             int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
             if (LastMaterial != material || LastMaterialVersion != material.Version) {
                 LastMaterialVersion = material.Version;
@@ -738,7 +735,7 @@ namespace Game {
             if (useIBL) {
                 defines.Add("USE_IBL");
             }
-            if (context.LightCount > 0
+            if (context.HasPunctualLight
                 && material?.Unlit?.IsEnabled != true) {
                 defines.Add("USE_PUNCTUAL");
             }
