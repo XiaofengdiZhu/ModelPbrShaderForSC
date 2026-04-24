@@ -905,54 +905,7 @@ namespace Game {
 
         void AddMaterialDefines(ShaderDefines defines, ModelMaterial material) {
             defines.Add("MATERIAL_METALLICROUGHNESS");
-            if (material.BaseColorTexture?.HasTexture == true) {
-                defines.Add("HAS_BASE_COLOR_MAP");
-            }
-            if (material.MetallicRoughnessTexture?.HasTexture == true) {
-                defines.Add("HAS_METALLIC_ROUGHNESS_MAP");
-            }
-            if (material.NormalTexture?.HasTexture == true) {
-                defines.Add("HAS_NORMAL_MAP");
-            }
-            if (material.OcclusionTexture?.HasTexture == true) {
-                defines.Add("HAS_OCCLUSION_MAP");
-            }
-            if (material.EmissiveTexture?.HasTexture == true) {
-                defines.Add("HAS_EMISSIVE_MAP");
-            }
-            if (material.ClearCoat?.IsEnabled == true) {
-                defines.Add("MATERIAL_CLEARCOAT");
-            }
-            if (material.Sheen?.IsEnabled == true) {
-                defines.Add("MATERIAL_SHEEN");
-            }
-            if (material.Transmission?.IsEnabled == true) {
-                defines.Add("MATERIAL_TRANSMISSION");
-            }
-            if (material.Volume?.IsEnabled == true) {
-                defines.Add("MATERIAL_VOLUME");
-            }
-            if (material.Iridescence?.IsEnabled == true) {
-                defines.Add("MATERIAL_IRIDESCENCE");
-            }
-            if (material.Specular?.IsEnabled == true) {
-                defines.Add("MATERIAL_SPECULAR");
-            }
-            if (material.Anisotropy?.IsEnabled == true) {
-                defines.Add("MATERIAL_ANISOTROPY");
-            }
-            if (material.DiffuseTransmission?.IsEnabled == true) {
-                defines.Add("MATERIAL_DIFFUSE_TRANSMISSION");
-            }
-            if (material.SpecularGlossiness?.IsEnabled == true) {
-                defines.Add("MATERIAL_SPECULAR_GLOSSINESS");
-            }
-            if (material.EmissiveStrength?.IsEnabled == true) {
-                defines.Add("MATERIAL_EMISSIVE_STRENGTH");
-            }
-            if (material.Unlit?.IsEnabled == true) {
-                defines.Add("MATERIAL_UNLIT");
-            }
+            material.PopulateDefines(defines);
         }
 
         protected override int ComputeMaterialHash(ModelMaterial material) {
