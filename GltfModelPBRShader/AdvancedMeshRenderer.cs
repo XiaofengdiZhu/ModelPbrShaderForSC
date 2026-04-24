@@ -499,12 +499,13 @@ namespace Game {
         /// </summary>
         protected virtual void SetupCullMode(ModelMaterial material, bool isNegativeScale = false) {
             // Always set correct cull mode first to establish FrontFace direction
-            // (gl_FrontFacing in shader depends on it, even for double-sided materials)
+            // (gl_FrontFacing in shader depends on it, even for double-sided materials).
+            // CullMode.None does NOT reset FrontFace, so we establish it via a culling
+            // state first, then optionally switch to no-cull for double-sided materials.
             RasterizerState state = isNegativeScale
                 ? RasterizerState.CullClockwiseScissor
                 : RasterizerState.CullCounterClockwiseScissor;
             GLWrapper.ApplyRasterizerState(state);
-            // Double-sided: disable culling but keep FrontFace for correct gl_FrontFacing
             if (material?.DoubleSided == true) {
                 GLWrapper.ApplyRasterizerState(RasterizerState.CullNoneScissor);
             }

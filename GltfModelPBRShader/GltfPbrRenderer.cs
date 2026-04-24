@@ -392,7 +392,8 @@ namespace Game {
 
             // GL 状态
             SetupDepthState(effectiveMaterial);
-            SetupCullMode(effectiveMaterial, GetBoneTransformForEntry(entry).Determinant() < 0f);
+            bool isNegScale = GetBoneTransformForEntry(entry).Determinant() < 0f;
+            SetupCullMode(effectiveMaterial, isNegScale);
             SetupBlendMode(effectiveMaterial, CurrentContext);
             SetupTransmissionUniforms(effectiveMaterial, shader);
             SetupVolumeScatterUniforms(effectiveMaterial, shader);
