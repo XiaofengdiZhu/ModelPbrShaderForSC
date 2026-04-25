@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using Engine;
+using Engine.Animation;
 using Engine.Graphics;
 using Engine.Media;
 using Silk.NET.OpenGLES;
@@ -101,6 +102,7 @@ namespace Game {
             AddShader(shaders, "GltfModelPbrShaders/", "panorama_to_cubemap.frag");
             AddShader(shaders, "GltfModelPbrShaders/", "ibl_filtering.frag");
             ShaderCache.LoadShaderSources(shaders, basePath);
+            AnimationPlayer.MorphWeightAnimationEnabled = true;
             _shadersLoaded = true;
         }
 
@@ -389,7 +391,6 @@ namespace Game {
             if (hasSkin) {
                 UpdateRenderStateUBO(CurrentContext.Wvp, CurrentContext.CameraView);
                 BindJointTexture(_subsystemModelsRenderer.m_jointTexture, shader);
-                SetupMorphTargets(entry.Part, shader);
             }
             else {
                 UpdateRenderStateUBOForInstancing();
@@ -400,6 +401,7 @@ namespace Game {
                 UploadInstanceLightData(_instanceLightData, 1);
                 SetupInstanceAttributes();
             }
+            SetupMorphTargets(entry.Part, shader);
             UpdateMaterialUBOs(effectiveMaterial, false);
             UpdateUVTransformUBO(effectiveMaterial);
 
@@ -503,6 +505,7 @@ namespace Game {
                 }
                 // 检测 glTF EXT_mesh_gpu_instancing（用 entry 的 Part 而非 mesh.MeshParts[0]）
                 ModelMeshPart firstPart = groupEntries[0].Part;
+                SetupMorphTargets(firstPart, shader);
                 bool hasGltfInstancing = firstPart != null
                     && firstPart.InstanceCount > 0
                     && firstPart.InstanceMatrices != null;
@@ -824,8 +827,7 @@ namespace Game {
                 && HasSkinningData(mesh)) {
                 defines.Add("USE_SKINNING");
             }
-            if (!isInstanced
-                && context.EnableMorphing
+            if (context.EnableMorphing
                 && HasMorphTargetData(mesh)) {
                 AddMorphTargetDefines(defines, mesh);
             }
