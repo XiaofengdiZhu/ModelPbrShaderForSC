@@ -13,15 +13,15 @@ precision highp float;
 
 out vec4 g_finalColor;
 
-// Specular Glossiness - 从 Material UBO 读取
-// uniform vec3 u_SpecularFactor;    -> Material.SpecularFactorSG
-// uniform vec4 u_DiffuseFactor;     -> Material.BaseColorFactor
-// uniform float u_GlossinessFactor; -> Material.GlossinessFactor
+// Specular Glossiness - 从 MaterialExt/MaterialCore UBO 读取
+// DiffuseFactor    -> u_BaseColorFactor (MaterialCore.BaseColorFactor)
+// SpecularFactor   -> MaterialExt.SpecularFactorSG
+// GlossinessFactor -> MaterialExt.GlossinessFactor
 
 
 void main()
 {
-    vec4 baseColor = Material.BaseColorFactor;
+    vec4 baseColor = u_BaseColorFactor;
 
     #if defined(HAS_DIFFUSE_MAP)
     baseColor *= texture(u_DiffuseSampler, getDiffuseUV());
@@ -46,8 +46,8 @@ void main()
     materialInfo.f90_dielectric = vec3(1.0);
     materialInfo.metallic = 0.0;
 
-    vec3 specular = Material.SpecularFactorSG.xyz;
-    float glossiness = Material.GlossinessFactor;
+    vec3 specular = MaterialExt.SpecularFactorSG.xyz;
+    float glossiness = MaterialExt.GlossinessFactor;
 
     #ifdef HAS_SPECULAR_GLOSSINESS_MAP
     vec4 sgSample = texture(u_SpecularGlossinessSampler, getSpecularGlossinessUV());
