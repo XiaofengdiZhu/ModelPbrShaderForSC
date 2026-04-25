@@ -171,8 +171,9 @@ namespace Game {
                 return;
             }
 
-            // 绑定纹理到指定纹理单元
+            // 先绑定纹理到指定纹理单元，再设 sampler 参数
             BindTexture2D(texture.NativeHandle, slot);
+            ApplySamplerState(texture);
         }
 
         /// <summary>
