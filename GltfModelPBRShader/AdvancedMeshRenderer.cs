@@ -5,7 +5,6 @@ using Engine;
 using Engine.Graphics;
 using Engine.Media;
 using Silk.NET.OpenGLES;
-using PrimitiveType = Silk.NET.OpenGLES.PrimitiveType;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
 using Vector2 = Engine.Vector2;
@@ -567,7 +566,7 @@ namespace Game {
             unsafe {
                 IntPtr indexOffset = new(part.StartIndex * part.IndexBuffer.IndexFormat.GetSize());
                 GLWrapper.GL.DrawElements(
-                    PrimitiveType.Triangles,
+                    GLWrapper.TranslatePrimitiveType(part.PrimitiveType),
                     (uint)part.IndicesCount,
                     GLWrapper.TranslateIndexFormat(part.IndexBuffer.IndexFormat),
                     indexOffset.ToPointer()
@@ -690,7 +689,7 @@ namespace Game {
                 unsafe {
                     IntPtr indexOffset = new(part.StartIndex * part.IndexBuffer.IndexFormat.GetSize());
                     GLWrapper.GL.DrawElementsInstanced(
-                        PrimitiveType.Triangles,
+                        GLWrapper.TranslatePrimitiveType(part.PrimitiveType),
                         (uint)part.IndicesCount,
                         GLWrapper.TranslateIndexFormat(part.IndexBuffer.IndexFormat),
                         indexOffset.ToPointer(),
