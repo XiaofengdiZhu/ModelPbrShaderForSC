@@ -480,34 +480,96 @@ namespace Game {
                     && CurrentContext.UseIBL) {
                     BindIBLTextures();
                 }
-                for (int offset = 0; offset < groupEntries.Count; offset += MaxInstancesPerBatch) {
-                    int count = Math.Min(MaxInstancesPerBatch, groupEntries.Count - offset);
-                    int posCount = 0, negCount = 0;
-                    for (int i = 0; i < count; i++) {
-                        PartRenderEntry e = groupEntries[offset + i];
-                        Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
-                        Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
-                        Matrix engineMatrix = GetBoneTransformForEntry(e);
-                        if (engineMatrix.Determinant() < 0f) {
-                            _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = worldMatrix;
-                            _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
-                            negCount++;
+                // 检测 glTF EXT_mesh_gpu_instancing（用 entry 的 Part 而非 mesh.MeshParts[0]）
+                ModelMeshPart firstPart = groupEntries[0].Part;
+                bool hasGltfInstancing = firstPart != null
+                    && firstPart.InstanceCount > 0
+                    && firstPart.InstanceMatrices != null;
+
+                if (hasGltfInstancing) {
+                    // glTF 实例化：每个 entry 贡献 N 个矩阵（同节点所有 primitive 共享引用）
+                    int instancesPerEntry = firstPart.InstanceCount;
+                    var gltfMatrices = firstPart.InstanceMatrices;
+                    int entryIdx = 0;
+                    int instanceIdx = 0;
+
+                    while (entryIdx < groupEntries.Count) {
+                        int posCount = 0, negCount = 0;
+                        while (entryIdx < groupEntries.Count && posCount + negCount < MaxInstancesPerBatch) {
+                            PartRenderEntry e = groupEntries[entryIdx];
+                            Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
+                            Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
+
+                            while (instanceIdx < instancesPerEntry && posCount + negCount < MaxInstancesPerBatch) {
+                                // gltfLocal 先于 world 变换（行向量约定：v * gltfLocal * world）
+                                Matrix4x4 instMatrix = gltfMatrices[instanceIdx] * worldMatrix;
+                                Matrix4x4.Decompose(instMatrix, out System.Numerics.Vector3 s, out _, out _);
+                                bool isNeg = s.X < 0 ^ s.Y < 0 ^ s.Z < 0;
+                                if (isNeg) {
+                                    _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = instMatrix;
+                                    _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
+                                    negCount++;
+                                }
+                                else {
+                                    _instanceMatrices[posCount] = instMatrix;
+                                    _instanceLightData[posCount] = light;
+                                    posCount++;
+                                }
+                                instanceIdx++;
+                            }
+
+                            if (instanceIdx >= instancesPerEntry) {
+                                instanceIdx = 0;
+                                entryIdx++;
+                            }
+                            else {
+                                break;
+                            }
                         }
-                        else {
-                            _instanceMatrices[posCount] = worldMatrix;
-                            _instanceLightData[posCount] = light;
-                            posCount++;
+
+                        if (posCount > 0) {
+                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
+                        }
+                        if (negCount > 0) {
+                            for (int i = 0; i < negCount; i++) {
+                                _instanceMatrices[i] = _instanceMatrices[MaxInstancesPerBatch - 1 - i];
+                                _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
+                            }
+                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
                         }
                     }
-                    if (posCount > 0) {
-                        DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
-                    }
-                    if (negCount > 0) {
-                        for (int i = 0; i < negCount; i++) {
-                            _instanceMatrices[i] = _instanceMatrices[MaxInstancesPerBatch - 1 - i];
-                            _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
+                }
+                else {
+                    // 普通实例化：每个 entry 贡献 1 个矩阵
+                    for (int offset = 0; offset < groupEntries.Count; offset += MaxInstancesPerBatch) {
+                        int count = Math.Min(MaxInstancesPerBatch, groupEntries.Count - offset);
+                        int posCount = 0, negCount = 0;
+                        for (int i = 0; i < count; i++) {
+                            PartRenderEntry e = groupEntries[offset + i];
+                            Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
+                            Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
+                            Matrix engineMatrix = GetBoneTransformForEntry(e);
+                            if (engineMatrix.Determinant() < 0f) {
+                                _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = worldMatrix;
+                                _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
+                                negCount++;
+                            }
+                            else {
+                                _instanceMatrices[posCount] = worldMatrix;
+                                _instanceLightData[posCount] = light;
+                                posCount++;
+                            }
                         }
-                        DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
+                        if (posCount > 0) {
+                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
+                        }
+                        if (negCount > 0) {
+                            for (int i = 0; i < negCount; i++) {
+                                _instanceMatrices[i] = _instanceMatrices[MaxInstancesPerBatch - 1 - i];
+                                _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
+                            }
+                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
+                        }
                     }
                 }
             }
