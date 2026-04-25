@@ -292,23 +292,12 @@ namespace Game {
             }
             _transparentRendered = true;
 
-            // Transmission FBO 捕获（drawOrder 150 时天空和水面都已渲染）
-            if (_hasTransmissionThisFrame && !_transmissionFboCaptured) {
-                _transmissionFboCaptured = true;
-                _framebufferManager.EnsureTransmissionFramebuffer();
-                _framebufferManager.Transmission.BlitFromBackbuffer(Display.Viewport.Width, Display.Viewport.Height);
-                _framebufferManager.GenerateTransmissionMipmap();
-            }
-
             // 合并 before/after water 列表到独立列表，统一排序渲染
             _allTransparentEntries.AddRange(_transparentBeforeWater);
             _allTransparentEntries.AddRange(_transparentAfterWater);
             List<PartRenderEntry> entries = _allTransparentEntries;
-            if (entries.Count == 0) {
-                return;
-            }
 
-            // 计算深度用于 back-to-front 排序
+            // 计算 depth 用于排序
             Matrix viewMatrix = camera.ViewMatrix;
             for (int i = 0; i < entries.Count; i++) {
                 PartRenderEntry entry = entries[i];
@@ -321,9 +310,41 @@ namespace Game {
             }
             entries.Sort(BackToFrontComparison);
 
+            // 在 Transmission FBO 捕获前，先渲染非 Transmission 的透明物体（AlphaBlend、Scatter）
+            // 这样 blit 时 alpha blend 内容会被包含在 transmission 屏幕空间查找纹理中
+            if (_hasTransmissionThisFrame) {
+                foreach (PartRenderEntry entry in entries) {
+                    if (entry.QueueType != PartRenderQueue.Transmission) {
+                        RenderSingleEntry(entry, camera);
+                    }
+                }
+            }
+
+            // Transmission FBO 捕获（此时 opaque + alpha blend 都已在 backbuffer 中）
+            if (_hasTransmissionThisFrame && !_transmissionFboCaptured) {
+                _transmissionFboCaptured = true;
+                _framebufferManager.EnsureTransmissionFramebuffer();
+                _framebufferManager.Transmission.BlitFromBackbuffer(Display.Viewport.Width, Display.Viewport.Height);
+                _framebufferManager.GenerateTransmissionMipmap();
+            }
+
+            if (entries.Count == 0) {
+                return;
+            }
+
             // 渲染
-            foreach (PartRenderEntry entry in entries) {
-                RenderSingleEntry(entry, camera);
+            if (_hasTransmissionThisFrame) {
+                // 非 Transmission 已渲染，只渲染 Transmission
+                foreach (PartRenderEntry entry in entries) {
+                    if (entry.QueueType == PartRenderQueue.Transmission) {
+                        RenderSingleEntry(entry, camera);
+                    }
+                }
+            }
+            else {
+                foreach (PartRenderEntry entry in entries) {
+                    RenderSingleEntry(entry, camera);
+                }
             }
         }
 
