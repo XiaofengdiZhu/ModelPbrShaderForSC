@@ -10,9 +10,7 @@ namespace Game {
     public class ScatterFramebuffer : RenderTarget2D {
         public int DepthTextureHandle { get; private set; }
 
-        public ScatterFramebuffer(int width, int height)
-            : base(width, height, 1, ColorFormat.Rgba16f, DepthFormat.None) {
-        }
+        public ScatterFramebuffer(int width, int height) : base(width, height, 1, ColorFormat.Rgba16f, DepthFormat.None) { }
 
         public override unsafe void AllocateRenderTarget() {
             // 基类创建 FBO + 颜色附件（DepthFormat.None 跳过深度 renderbuffer）
@@ -22,22 +20,31 @@ namespace Game {
             GLWrapper.GL.GenTextures(1, out uint depthTex);
             DepthTextureHandle = (int)depthTex;
             GLWrapper.BindTexture(TextureTarget.Texture2D, DepthTextureHandle, true);
-            GLWrapper.GL.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.DepthComponent24,
-                (uint)Width, (uint)Height, 0, PixelFormat.DepthComponent, PixelType.UnsignedInt, null);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter,
-                (int)TextureMinFilter.Linear);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter,
-                (int)TextureMagFilter.Linear);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS,
-                (int)TextureWrapMode.ClampToEdge);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT,
-                (int)TextureWrapMode.ClampToEdge);
+            GLWrapper.GL.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                InternalFormat.DepthComponent24,
+                (uint)Width,
+                (uint)Height,
+                0,
+                PixelFormat.DepthComponent,
+                PixelType.UnsignedInt,
+                null
+            );
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
             // 附加深度纹理到 FBO
             GLWrapper.BindFramebuffer(m_frameBuffer);
-            GLWrapper.GL.FramebufferTexture2D(FramebufferTarget.Framebuffer,
-                FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, depthTex, 0);
-
+            GLWrapper.GL.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.DepthAttachment,
+                TextureTarget.Texture2D,
+                depthTex,
+                0
+            );
             GLEnum status = GLWrapper.GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
             if (status != GLEnum.FramebufferComplete) {
                 throw new InvalidOperationException($"ScatterFramebuffer incomplete: {status}");

@@ -162,7 +162,9 @@ namespace Game {
                         continue;
                     }
                     ModelMesh mesh = model.Meshes[meshIndex];
-                    if (!mesh.IsVisible) continue;
+                    if (!mesh.IsVisible) {
+                        continue;
+                    }
                     foreach (ModelMeshPart part in mesh.MeshParts) {
                         ModelMaterial mat = model.GetMaterial(part.MaterialIndex);
                         PartRenderQueue queueType = PartRenderEntry.ComputeQueueType(mat);
@@ -330,7 +332,6 @@ namespace Game {
                 _framebufferManager.Transmission.BlitFromBackbuffer(Display.Viewport.Width, Display.Viewport.Height);
                 _framebufferManager.GenerateTransmissionMipmap();
             }
-
             if (entries.Count == 0) {
                 return;
             }
@@ -475,7 +476,10 @@ namespace Game {
                 bool hasLights = _collectedLights.Count > 0;
                 if (!hasLights) {
                     for (int gi = 0; gi < groupEntries.Count; gi++) {
-                        if (GetCelestialBodyVisible(groupEntries[gi].ModelData)) { hasLights = true; break; }
+                        if (GetCelestialBodyVisible(groupEntries[gi].ModelData)) {
+                            hasLights = true;
+                            break;
+                        }
                     }
                 }
                 SetHasPunctualLight(hasLights);
@@ -509,29 +513,26 @@ namespace Game {
                 // 检测 glTF EXT_mesh_gpu_instancing（用 entry 的 Part 而非 mesh.MeshParts[0]）
                 ModelMeshPart firstPart = groupEntries[0].Part;
                 SetupMorphTargets(firstPart, shader);
-                bool hasGltfInstancing = firstPart != null
-                    && firstPart.InstanceCount > 0
-                    && firstPart.InstanceMatrices != null;
-
+                bool hasGltfInstancing = firstPart != null && firstPart.InstanceCount > 0 && firstPart.InstanceMatrices != null;
                 if (hasGltfInstancing) {
                     // glTF 实例化：每个 entry 贡献 N 个矩阵（同节点所有 primitive 共享引用）
                     int instancesPerEntry = firstPart.InstanceCount;
-                    var gltfMatrices = firstPart.InstanceMatrices;
+                    Matrix4x4[] gltfMatrices = firstPart.InstanceMatrices;
                     int entryIdx = 0;
                     int instanceIdx = 0;
-
                     while (entryIdx < groupEntries.Count) {
                         int posCount = 0, negCount = 0;
-                        while (entryIdx < groupEntries.Count && posCount + negCount < MaxInstancesPerBatch) {
+                        while (entryIdx < groupEntries.Count
+                            && posCount + negCount < MaxInstancesPerBatch) {
                             PartRenderEntry e = groupEntries[entryIdx];
                             Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
                             Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
-
-                            while (instanceIdx < instancesPerEntry && posCount + negCount < MaxInstancesPerBatch) {
+                            while (instanceIdx < instancesPerEntry
+                                && posCount + negCount < MaxInstancesPerBatch) {
                                 // gltfLocal 先于 world 变换（行向量约定：v * gltfLocal * world）
                                 Matrix4x4 instMatrix = gltfMatrices[instanceIdx] * worldMatrix;
                                 Matrix4x4.Decompose(instMatrix, out System.Numerics.Vector3 s, out _, out _);
-                                bool isNeg = s.X < 0 ^ s.Y < 0 ^ s.Z < 0;
+                                bool isNeg = (s.X < 0) ^ (s.Y < 0) ^ (s.Z < 0);
                                 if (isNeg) {
                                     _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = instMatrix;
                                     _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;
@@ -544,7 +545,6 @@ namespace Game {
                                 }
                                 instanceIdx++;
                             }
-
                             if (instanceIdx >= instancesPerEntry) {
                                 instanceIdx = 0;
                                 entryIdx++;
@@ -553,7 +553,6 @@ namespace Game {
                                 break;
                             }
                         }
-
                         if (posCount > 0) {
                             DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
                         }
@@ -657,9 +656,7 @@ namespace Game {
             return Matrix.Identity;
         }
 
-        static Matrix4x4 GetWorldMatrixForEntry(PartRenderEntry entry) {
-            return GetBoneTransformForEntry(entry);
-        }
+        static Matrix4x4 GetWorldMatrixForEntry(PartRenderEntry entry) => GetBoneTransformForEntry(entry);
 
         ModelMaterial GetEffectiveMaterial(PartRenderEntry entry) {
             if (entry.Material != null) {
@@ -745,9 +742,12 @@ namespace Game {
         }
 
         void UpdateMaterialUBOs(ModelMaterial material, bool useGeneratedTangents) {
-            if (material == null) return;
+            if (material == null) {
+                return;
+            }
             int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
-            if (LastMaterial != material || LastMaterialVersion != material.Version) {
+            if (LastMaterial != material
+                || LastMaterialVersion != material.Version) {
                 LastMaterialVersion = material.Version;
                 MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, useGeneratedTangents);
                 _materialCoreUBO.Update(ref coreData);
