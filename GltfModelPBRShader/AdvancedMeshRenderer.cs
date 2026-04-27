@@ -74,6 +74,7 @@ namespace Game {
         protected const int JointTextureSlot = 31;
 
         protected readonly Dictionary<int, int> _celestialBodyVisibleLocCache = [];
+        readonly HashSet<ComponentModel> _collectedLightModels = [];
         protected readonly Dictionary<int, int> _glymulLocationCache = [];
 
         // Uniform location 缓存
@@ -82,6 +83,7 @@ namespace Game {
 
         // 帧级光照数据（逐模型缩放时使用）
         Vector3 _baseLightColor;
+        protected List<CollectedLight> _collectedLights = [];
 
         // 缓存优化
         bool _instanceBufferCreated;
@@ -99,21 +101,6 @@ namespace Game {
         protected SubsystemTerrain _subsystemTerrain;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
         Vector3 _viewLightDir;
-
-        // 全局灯光（每帧收集，按距相机距离排序）
-        protected struct CollectedLight {
-            public Vector3 ViewPosition;
-            public Vector3 ViewDirection;
-            public Vector3 Color;
-            public float Intensity;
-            public float Range;
-            public int Type;
-            public float InnerConeCos;
-            public float OuterConeCos;
-            public float DistanceSq;
-        }
-        protected List<CollectedLight> _collectedLights = [];
-        HashSet<ComponentModel> _collectedLightModels = [];
         protected RenderContext CurrentContext = new();
         protected int LastExtensionFlags;
 
@@ -390,46 +377,53 @@ namespace Game {
             _collectedLightModels.Clear();
             foreach (SubsystemModelsRenderer.ModelData md in allModels) {
                 ComponentModel cm = md.ComponentModel;
-                if (cm == null || !_collectedLightModels.Add(cm)) continue;
+                if (cm == null
+                    || !_collectedLightModels.Add(cm)) {
+                    continue;
+                }
                 Model model = cm.Model;
-                if (model == null || model.Lights.Count == 0) continue;
-
+                if (model == null
+                    || model.Lights.Count == 0) {
+                    continue;
+                }
                 Matrix wm = md.ComponentModel.AbsoluteBoneTransformsForCamera.Length > 0
                     ? md.ComponentModel.AbsoluteBoneTransformsForCamera[0]
-                    : Engine.Matrix.Identity;
+                    : Matrix.Identity;
                 Matrix4x4 viewMatrix = wm;
-
                 foreach (ModelLight ml in model.Lights) {
-                    if (!ml.IsVisible) continue;
-
+                    if (!ml.IsVisible) {
+                        continue;
+                    }
                     System.Numerics.Vector3 viewPos;
                     System.Numerics.Vector3 viewDir;
-
-                    if (ml.BoneIndex >= 0 && ml.BoneIndex < cm.AbsoluteBoneTransformsForCamera.Length) {
+                    if (ml.BoneIndex >= 0
+                        && ml.BoneIndex < cm.AbsoluteBoneTransformsForCamera.Length) {
                         // 动画驱动的灯光：直接从骨骼变换提取 view space 位置/方向
                         // 灯光在骨骼原点，方向为骨骼的 -Z 轴（glTF 约定）
                         Matrix4x4 boneMatrix = cm.AbsoluteBoneTransformsForCamera[ml.BoneIndex];
                         viewPos = new System.Numerics.Vector3(boneMatrix.M41, boneMatrix.M42, boneMatrix.M43);
                         viewDir = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(-boneMatrix.M31, -boneMatrix.M32, -boneMatrix.M33));
-                    } else {
+                    }
+                    else {
                         // 静态灯光：ml.Position/Direction 在 glTF world space，用 root bone 变换到 view space
-                        var localPos = new System.Numerics.Vector3(ml.Position.X, ml.Position.Y, ml.Position.Z);
-                        var localDir = new System.Numerics.Vector3(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
+                        System.Numerics.Vector3 localPos = new(ml.Position.X, ml.Position.Y, ml.Position.Z);
+                        System.Numerics.Vector3 localDir = new(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
                         viewPos = System.Numerics.Vector3.Transform(localPos, viewMatrix);
                         viewDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(localDir, viewMatrix));
                     }
-
-                    _collectedLights.Add(new CollectedLight {
-                        ViewPosition = new Vector3(viewPos.X, viewPos.Y, viewPos.Z),
-                        ViewDirection = new Vector3(viewDir.X, viewDir.Y, viewDir.Z),
-                        Color = ml.Color,
-                        Intensity = ml.Intensity,
-                        Range = ml.Range,
-                        Type = (int)ml.Type,
-                        InnerConeCos = ml.InnerConeCos,
-                        OuterConeCos = ml.OuterConeCos,
-                        DistanceSq = viewPos.LengthSquared()
-                    });
+                    _collectedLights.Add(
+                        new CollectedLight {
+                            ViewPosition = new Vector3(viewPos.X, viewPos.Y, viewPos.Z),
+                            ViewDirection = new Vector3(viewDir.X, viewDir.Y, viewDir.Z),
+                            Color = ml.Color,
+                            Intensity = ml.Intensity,
+                            Range = ml.Range,
+                            Type = (int)ml.Type,
+                            InnerConeCos = ml.InnerConeCos,
+                            OuterConeCos = ml.OuterConeCos,
+                            DistanceSq = viewPos.LengthSquared()
+                        }
+                    );
                 }
             }
             _collectedLights.Sort((a, b) => a.DistanceSq.CompareTo(b.DistanceSq));
@@ -437,14 +431,13 @@ namespace Game {
                 _collectedLights.RemoveRange(ModelLight.MaxPunctualLights, _collectedLights.Count - ModelLight.MaxPunctualLights);
             }
         }
+
         /// 更新光照 UBO：太阳/月亮 + 全局 glTF 灯光
         /// </summary>
         protected void UpdateLightsUBO(float intensity) {
             LightsData lightsData = new() {
-                LightCount = 1,
-                Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
+                LightCount = 1, Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
             };
-
             for (int i = 0; i < _collectedLights.Count && lightsData.LightCount <= 7; i++) {
                 CollectedLight cl = _collectedLights[i];
                 LightData ld = new() {
@@ -468,7 +461,6 @@ namespace Game {
                 }
                 lightsData.LightCount++;
             }
-
             LightsUBO.Update(ref lightsData);
         }
 
@@ -501,9 +493,7 @@ namespace Game {
             // (gl_FrontFacing in shader depends on it, even for double-sided materials).
             // CullMode.None does NOT reset FrontFace, so we establish it via a culling
             // state first, then optionally switch to no-cull for double-sided materials.
-            RasterizerState state = isNegativeScale
-                ? RasterizerState.CullClockwiseScissor
-                : RasterizerState.CullCounterClockwiseScissor;
+            RasterizerState state = isNegativeScale ? RasterizerState.CullClockwiseScissor : RasterizerState.CullCounterClockwiseScissor;
             GLWrapper.ApplyRasterizerState(state);
             if (material?.DoubleSided == true) {
                 GLWrapper.ApplyRasterizerState(RasterizerState.CullNoneScissor);
@@ -719,8 +709,8 @@ namespace Game {
         }
 
         protected void UpdateContextHash(RenderContext context) {
-            (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, bool HasPunctualLight, DebugChannel DebugChannel) contextParams = (context.UseIBL,
-                context.UseLinearOutput, context.ToneMapMode, context.HasPunctualLight, context.DebugChannel);
+            (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, bool HasPunctualLight, DebugChannel DebugChannel) contextParams = (
+                context.UseIBL, context.UseLinearOutput, context.ToneMapMode, context.HasPunctualLight, context.DebugChannel);
             if (_lastContextParams == contextParams) {
                 return;
             }
@@ -769,7 +759,9 @@ namespace Game {
         /// 设置灯光数量并更新上下文 hash（shader 变体选择用）
         /// </summary>
         protected void SetHasPunctualLight(bool value) {
-            if (CurrentContext.HasPunctualLight == value) return;
+            if (CurrentContext.HasPunctualLight == value) {
+                return;
+            }
             CurrentContext.HasPunctualLight = value;
             CachedContextHash = ComputeContextHash(CurrentContext);
         }
@@ -835,6 +827,19 @@ namespace Game {
             if (location >= 0) {
                 GLWrapper.GL.Uniform1(location, JointTextureSlot);
             }
+        }
+
+        // 全局灯光（每帧收集，按距相机距离排序）
+        protected struct CollectedLight {
+            public Vector3 ViewPosition;
+            public Vector3 ViewDirection;
+            public Vector3 Color;
+            public float Intensity;
+            public float Range;
+            public int Type;
+            public float InnerConeCos;
+            public float OuterConeCos;
+            public float DistanceSq;
         }
     }
 }
