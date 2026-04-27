@@ -28,7 +28,8 @@ uniform sampler2D u_jointsSampler;
 
 #ifdef USE_SKINNING
 
-mat4 getMatrixFromTexture(sampler2D s, int index)
+// This function can not work correctly for an unknown reason.
+/*mat4 getMatrixFromTextureOld(sampler2D s, int index)
 {
     mat4 result = mat4(1);
     int texSize = textureSize(s, 0)[0];
@@ -40,6 +41,22 @@ mat4 getMatrixFromTexture(sampler2D s, int index)
         //https://www.khronos.org/registry/OpenGL/specs/es/3.0/GLSL_ES_Specification_3.00.pdf (section 12.33)
         int y = (pixelIndex + i - x) / texSize;
         result[i] = texelFetch(s, ivec2(x, y), 0);
+    }
+    return result;
+}*/
+
+mat4 getMatrixFromTexture(sampler2D s, int index)
+{
+    mat4 result = mat4(1);
+    int texSize = textureSize(s, 0)[0];
+    int pixelIndex = index * 4;
+    float invSize = 1.0 / float(texSize);
+    for (int i = 0; i < 4; ++i)
+    {
+        int x = (pixelIndex + i) % texSize;
+        int y = (pixelIndex + i - x) / texSize;
+        vec2 uv = (vec2(float(x), float(y)) + 0.5) * invSize;
+        result[i] = textureLod(s, uv, 0.0);
     }
     return result;
 }
@@ -72,27 +89,7 @@ mat4 getSkinningMatrix()
 
 mat4 getSkinningNormalMatrix()
 {
-    mat4 skin = mat4(0);
-
-    #if defined(HAS_WEIGHTS_0_VEC4) && defined(HAS_JOINTS_0_VEC4)
-    skin +=
-    a_weights_0.x * getMatrixFromTexture(u_jointsSampler, int(a_joints_0.x) * 2 + 1) +
-    a_weights_0.y * getMatrixFromTexture(u_jointsSampler, int(a_joints_0.y) * 2 + 1) +
-    a_weights_0.z * getMatrixFromTexture(u_jointsSampler, int(a_joints_0.z) * 2 + 1) +
-    a_weights_0.w * getMatrixFromTexture(u_jointsSampler, int(a_joints_0.w) * 2 + 1);
-    #endif
-
-    #if defined(HAS_WEIGHTS_1_VEC4) && defined(HAS_JOINTS_1_VEC4)
-    skin +=
-    a_weights_1.x * getMatrixFromTexture(u_jointsSampler, int(a_joints_1.x) * 2 + 1) +
-    a_weights_1.y * getMatrixFromTexture(u_jointsSampler, int(a_joints_1.y) * 2 + 1) +
-    a_weights_1.z * getMatrixFromTexture(u_jointsSampler, int(a_joints_1.z) * 2 + 1) +
-    a_weights_1.w * getMatrixFromTexture(u_jointsSampler, int(a_joints_1.w) * 2 + 1);
-    #endif
-    if (skin == mat4(0)) {
-        return mat4(1);
-    }
-    return skin;
+    return getSkinningMatrix();
 }
 
 #endif// !USE_SKINNING
