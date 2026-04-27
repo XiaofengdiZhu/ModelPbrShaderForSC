@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using Engine;
+using Engine.Graphics;
 using GameEntitySystem;
 using TemplatesDatabase;
 
@@ -11,6 +12,7 @@ namespace Game {
 
         public override void Load(ValuesDictionary valuesDictionary) {
             if (PbrRenderer == null) {
+                Model.LoadTexturesInSrgb = true;
                 try {
                     PbrRenderer = new GltfPbrRenderer();
                     string envPath = "Environments/Cannon_Exterior.hdr";
