@@ -34,6 +34,7 @@ namespace Game {
         readonly List<PartRenderEntry> _allTransparentEntries = [];
         readonly PbrFramebufferManager _framebufferManager = new();
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> _instanceGroups = new();
+        readonly Dictionary<Model, JointTexture> _jointTextures = new();
 
         // PBR 材质 UBO
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
@@ -363,12 +364,14 @@ namespace Game {
             bool hasSkin = model?.HasSkin == true;
 
             // 蒙皮：计算 joint matrices
+            JointTexture jointTex = null;
+            int jointCount = 0;
             if (hasSkin) {
-                EnsureJointTexture(model);
+                jointTex = GetOrCreateJointTexture(model);
                 SubsystemModelsRenderer smr = _subsystemModelsRenderer;
                 Matrix invertedView = camera.InvertedViewMatrix;
-                int jointCount = smr.CalculateJointMatrices(cm, model, invertedView, smr.m_jointMatricesBuffer);
-                smr.m_jointTexture.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
+                jointCount = smr.CalculateJointMatrices(cm, model, invertedView, smr.m_jointMatricesBuffer);
+                jointTex.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
             }
             ModelMaterial effectiveMaterial = GetEffectiveMaterial(entry);
             SetHasPunctualLight(GetCelestialBodyVisible(entry.ModelData) || _collectedLights.Count > 0);
@@ -390,7 +393,6 @@ namespace Game {
             // 变换矩阵
             if (hasSkin) {
                 UpdateRenderStateUBO(CurrentContext.Wvp, CurrentContext.CameraView);
-                BindJointTexture(_subsystemModelsRenderer.m_jointTexture, shader);
             }
             else {
                 UpdateRenderStateUBOForInstancing();
@@ -422,6 +424,7 @@ namespace Game {
 
             // 绘制
             if (hasSkin) {
+                BindJointTexture(jointTex, shader);
                 DrawMeshPart(entry.Part);
             }
             else {
@@ -668,14 +671,15 @@ namespace Game {
             return DefaultDielectricMaterial;
         }
 
-        void EnsureJointTexture(Model model) {
-            SubsystemModelsRenderer smr = _subsystemModelsRenderer;
+        JointTexture GetOrCreateJointTexture(Model model) {
             int jointCount = Math.Min(model.Skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
-            if (smr.m_jointTexture == null
-                || smr.m_jointTexture.MaxJointCount < jointCount) {
-                smr.m_jointTexture?.Dispose();
-                smr.m_jointTexture = new JointTexture(jointCount);
+            if (!_jointTextures.TryGetValue(model, out JointTexture tex)
+                || tex.MaxJointCount < jointCount) {
+                tex?.Dispose();
+                tex = new JointTexture(jointCount);
+                _jointTextures[model] = tex;
             }
+            return tex;
         }
 
         void SetPerFrameUniforms(Shader shader, SubsystemModelsRenderer.ModelData modelData) {
