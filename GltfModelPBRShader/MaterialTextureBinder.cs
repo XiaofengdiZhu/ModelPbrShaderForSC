@@ -237,6 +237,14 @@ namespace Game {
         }
 
         /// <summary>
+        /// 清理所有缓存（Dispose 时调用）
+        /// </summary>
+        public static void ClearAllCaches() {
+            _appliedSamplers.Clear();
+            _slotUniformLocations.Clear();
+        }
+
+        /// <summary>
         /// 绑定 IBL 纹理（用于 PBR 渲染）
         /// </summary>
         public static void BindIBLTextures(uint lambertianTexture, uint ggxTexture, uint charlieTexture, uint ggxLut, uint charlieLut) {

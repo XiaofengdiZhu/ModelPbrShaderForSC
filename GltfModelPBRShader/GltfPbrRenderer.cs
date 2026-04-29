@@ -258,7 +258,7 @@ namespace Game {
 
         public override void Dispose() {
             IblSampler?.Dispose();
-            foreach (var jt in _jointTextures.Values) {
+            foreach (JointTexture jt in _jointTextures.Values) {
                 jt.Dispose();
             }
             _jointTextures.Clear();
@@ -274,6 +274,7 @@ namespace Game {
             _scatterSamplerLocCache.Clear();
             _scatterDepthSamplerLocCache.Clear();
             CelestialBodyCache.Clear();
+            MaterialTextureBinder.ClearAllCaches();
             base.Dispose();
         }
 

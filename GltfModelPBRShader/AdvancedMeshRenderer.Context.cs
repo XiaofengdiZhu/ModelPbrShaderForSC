@@ -12,13 +12,36 @@ namespace Game {
             CachedContextHash = ComputeContextHash(context);
         }
 
-        protected static int ComputeContextHash(RenderContext context) {
+        protected static int ComputeContextHash(RenderContext context) => ComputeContextHash(context.UseIBL, context.HasPunctualLight, context);
+
+        protected void SetHasPunctualLight(bool value) {
+            if (CurrentContext.HasPunctualLight == value) {
+                return;
+            }
+            CurrentContext.HasPunctualLight = value;
+            CachedContextHash = ComputeContextHash(CurrentContext);
+        }
+
+        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, RenderContext context) {
+            // 材质覆盖后的实际 shader defines：DiffuseTransmission 需要 IBL，Unlit 不需要 punctual
+            bool useIBL = context.UseIBL || material?.DiffuseTransmission?.IsEnabled == true;
+            bool usePunctual = context.HasPunctualLight && material?.Unlit?.IsEnabled != true;
+            // 如果不需要调整，直接返回原 hash
+            if (useIBL == context.UseIBL
+                && usePunctual == context.HasPunctualLight) {
+                return contextHash;
+            }
+            // 用调整后的参数重新计算 hash，确保语义相同的 defines 得到相同 hash
+            return ComputeContextHash(useIBL, usePunctual, context);
+        }
+
+        protected static int ComputeContextHash(bool useIBL, bool usePunctual, RenderContext context) {
             unchecked {
                 int hash = 17;
-                if (context.UseIBL) {
+                if (useIBL) {
                     hash = hash * 31 + "USE_IBL 1".GetHashCode();
                 }
-                if (context.HasPunctualLight) {
+                if (usePunctual) {
                     hash = hash * 31 + "USE_PUNCTUAL 1".GetHashCode();
                 }
                 if (context.UseLinearOutput) {
@@ -38,28 +61,6 @@ namespace Game {
                     hash = hash * 31 + $"DEBUG {(int)context.DebugChannel}".GetHashCode();
                 }
                 return hash;
-            }
-        }
-
-        protected void SetHasPunctualLight(bool value) {
-            if (CurrentContext.HasPunctualLight == value) {
-                return;
-            }
-            CurrentContext.HasPunctualLight = value;
-            CachedContextHash = ComputeContextHash(CurrentContext);
-        }
-
-        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, RenderContext context) {
-            unchecked {
-                if (material?.DiffuseTransmission?.IsEnabled == true
-                    && !context.UseIBL) {
-                    contextHash ^= "USE_IBL 1".GetHashCode();
-                }
-                if (material?.Unlit?.IsEnabled == true
-                    && context.HasPunctualLight) {
-                    contextHash ^= "USE_PUNCTUAL 1".GetHashCode();
-                }
-                return contextHash;
             }
         }
     }
