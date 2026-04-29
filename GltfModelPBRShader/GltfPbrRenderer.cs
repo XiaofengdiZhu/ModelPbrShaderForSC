@@ -538,8 +538,7 @@ namespace Game {
                                 && posCount + negCount < MaxInstancesPerBatch) {
                                 // gltfLocal 先于 world 变换（行向量约定：v * gltfLocal * world）
                                 Matrix4x4 instMatrix = gltfMatrices[instanceIdx] * worldMatrix;
-                                Matrix4x4.Decompose(instMatrix, out System.Numerics.Vector3 s, out _, out _);
-                                bool isNeg = (s.X < 0) ^ (s.Y < 0) ^ (s.Z < 0);
+                                bool isNeg = instMatrix.GetDeterminant() < 0f;
                                 if (isNeg) {
                                     _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = instMatrix;
                                     _instanceLightData[MaxInstancesPerBatch - 1 - negCount] = light;

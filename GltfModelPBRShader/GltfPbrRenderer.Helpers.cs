@@ -32,6 +32,9 @@ namespace Game {
         }
 
         JointTexture GetOrCreateJointTexture(Model model) {
+            if (model.Skin == null) {
+                return null;
+            }
             int jointCount = Math.Min(model.Skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
             if (!_jointTextures.TryGetValue(model, out JointTexture tex)
                 || tex.MaxJointCount < jointCount) {

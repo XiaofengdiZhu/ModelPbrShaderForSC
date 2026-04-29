@@ -83,14 +83,18 @@ namespace Game {
 
         static string ReadLine(BinaryReader reader) {
             StringBuilder sb = new();
-            int b;
-            while ((b = reader.ReadByte()) != -1
-                && b != '\n') {
-                if (b != '\r') {
-                    sb.Append((char)b);
+            try {
+                int b;
+                while ((b = reader.ReadByte()) != '\n') {
+                    if (b != '\r') {
+                        sb.Append((char)b);
+                    }
                 }
+                return sb.ToString();
             }
-            return b == -1 && sb.Length == 0 ? null : sb.ToString();
+            catch (EndOfStreamException) {
+                return sb.Length == 0 ? null : sb.ToString();
+            }
         }
 
         static float[] ReadRleRgbe(BinaryReader reader, int width, int height) {
