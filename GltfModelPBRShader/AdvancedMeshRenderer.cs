@@ -181,8 +181,6 @@ namespace Game {
                 lightColor = moonColor;
             }
 
-            // IBL strength follows day/night cycle
-            EnvironmentStrength = Math.Max(skyIntensity, 0.1f);
             ActiveLightDirection = lightDirection;
             IsDirectionalLightActive = lightDirection.Y <= 0f;
             CurrentContext.View = Matrix4x4.Identity;
