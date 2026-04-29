@@ -4,51 +4,12 @@ using System.Numerics;
 using Engine;
 using Engine.Graphics;
 using Engine.Media;
-using Silk.NET.OpenGLES;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
 using Vector2 = Engine.Vector2;
 using Vector3 = Engine.Vector3;
 
 namespace Game {
-    /// <summary>
-    /// Mesh part 渲染队列类型
-    /// </summary>
-    public enum PartRenderQueue {
-        Opaque,
-        Transparent,
-        Transmission,
-        Scatter
-    }
-
-    /// <summary>
-    /// 单个 mesh part 的渲染条目
-    /// 在 PrepareCustomQueues 中创建，按队列分类存储
-    /// </summary>
-    public struct PartRenderEntry {
-        public ModelMesh Mesh;
-        public ModelMeshPart Part;
-        public ModelMaterial Material;
-        public SubsystemModelsRenderer.ModelData ModelData;
-        public Texture2D TextureOverride;
-        public PartRenderQueue QueueType;
-        public float Depth;
-
-        public static PartRenderQueue ComputeQueueType(ModelMaterial mat) {
-            if (mat?.VolumeScatter?.IsEnabled == true
-                && mat?.DiffuseTransmission?.IsEnabled == true) {
-                return PartRenderQueue.Scatter;
-            }
-            if (mat?.Transmission?.IsEnabled == true) {
-                return PartRenderQueue.Transmission;
-            }
-            if (mat?.AlphaMode == ModelAlphaMode.Blend) {
-                return PartRenderQueue.Transparent;
-            }
-            return PartRenderQueue.Opaque;
-        }
-    }
-
     /// <summary>
     /// 高级网格渲染器基类
     /// 模组开发者继承此类实现自定义渲染（PBR、卡通渲染等）
@@ -61,7 +22,7 @@ namespace Game {
     /// - SetupShaderCallbacks(): 设置 Attribute/UBO 绑定回调
     /// - CreateShaderVariant(): 构建着色器变体
     /// </remarks>
-    public abstract class AdvancedMeshRenderer : ICustomModelRenderer {
+    public abstract partial class AdvancedMeshRenderer : ICustomModelRenderer {
         protected const int MaxInstancesPerBatch = 256;
 
         // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2)
@@ -83,6 +44,7 @@ namespace Game {
 
         // 帧级光照数据（逐模型缩放时使用）
         Vector3 _baseLightColor;
+        protected Camera _camera;
         protected List<CollectedLight> _collectedLights = [];
 
         // 缓存优化
@@ -101,7 +63,6 @@ namespace Game {
         protected SubsystemTerrain _subsystemTerrain;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
         Vector3 _viewLightDir;
-        protected Camera _camera;
         protected RenderContext CurrentContext = new();
         protected int LastExtensionFlags;
 
@@ -270,11 +231,6 @@ namespace Game {
             MaterialTextureBinder.ResetFrameState();
         }
 
-        /// <summary>
-        /// 准备自定义渲染队列（由子类在 BeginFrame 末尾调用）
-        /// </summary>
-        protected virtual void PrepareCustomQueues(List<SubsystemModelsRenderer.ModelData> allModels) { }
-
         public virtual void RenderOpaquePass() { }
 
         public virtual void RenderTransparentPass(bool underwater) { }
@@ -294,6 +250,11 @@ namespace Game {
             _jointSamplerLocationCache.Clear();
             _glymulLocationCache.Clear();
         }
+
+        /// <summary>
+        /// 准备自定义渲染队列（由子类在 BeginFrame 末尾调用）
+        /// </summary>
+        protected virtual void PrepareCustomQueues(List<SubsystemModelsRenderer.ModelData> allModels) { }
 
         /// <summary>
         /// 加载着色器源码（由模组实现）
@@ -374,102 +335,6 @@ namespace Game {
         }
 
         /// <summary>
-        /// 从所有可见模型收集 glTF 灯光到全局列表（view space，按距相机距离排序）
-        /// 在 PrepareCustomQueues 末尾调用
-        /// </summary>
-        protected void CollectGlobalLights(List<SubsystemModelsRenderer.ModelData> allModels) {
-            _collectedLights.Clear();
-            _collectedLightModels.Clear();
-            foreach (SubsystemModelsRenderer.ModelData md in allModels) {
-                ComponentModel cm = md.ComponentModel;
-                if (cm == null
-                    || !_collectedLightModels.Add(cm)) {
-                    continue;
-                }
-                Model model = cm.Model;
-                if (model == null
-                    || model.Lights.Count == 0) {
-                    continue;
-                }
-                Matrix wm = md.ComponentModel.AbsoluteBoneTransformsForCamera.Length > 0
-                    ? md.ComponentModel.AbsoluteBoneTransformsForCamera[0]
-                    : Matrix.Identity;
-                Matrix4x4 viewMatrix = wm;
-                foreach (ModelLight ml in model.Lights) {
-                    if (!ml.IsVisible) {
-                        continue;
-                    }
-                    System.Numerics.Vector3 viewPos;
-                    System.Numerics.Vector3 viewDir;
-                    if (ml.BoneIndex >= 0
-                        && ml.BoneIndex < cm.AbsoluteBoneTransformsForCamera.Length) {
-                        // 动画驱动的灯光：直接从骨骼变换提取 view space 位置/方向
-                        // 灯光在骨骼原点，方向为骨骼的 -Z 轴（glTF 约定）
-                        Matrix4x4 boneMatrix = cm.AbsoluteBoneTransformsForCamera[ml.BoneIndex];
-                        viewPos = new System.Numerics.Vector3(boneMatrix.M41, boneMatrix.M42, boneMatrix.M43);
-                        viewDir = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(-boneMatrix.M31, -boneMatrix.M32, -boneMatrix.M33));
-                    }
-                    else {
-                        // 静态灯光：ml.Position/Direction 在 glTF world space，用 root bone 变换到 view space
-                        System.Numerics.Vector3 localPos = new(ml.Position.X, ml.Position.Y, ml.Position.Z);
-                        System.Numerics.Vector3 localDir = new(ml.Direction.X, ml.Direction.Y, ml.Direction.Z);
-                        viewPos = System.Numerics.Vector3.Transform(localPos, viewMatrix);
-                        viewDir = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(localDir, viewMatrix));
-                    }
-                    _collectedLights.Add(
-                        new CollectedLight {
-                            ViewPosition = new Vector3(viewPos.X, viewPos.Y, viewPos.Z),
-                            ViewDirection = new Vector3(viewDir.X, viewDir.Y, viewDir.Z),
-                            Color = ml.Color,
-                            Intensity = ml.Intensity,
-                            Range = ml.Range,
-                            Type = (int)ml.Type,
-                            InnerConeCos = ml.InnerConeCos,
-                            OuterConeCos = ml.OuterConeCos,
-                            DistanceSq = viewPos.LengthSquared()
-                        }
-                    );
-                }
-            }
-            _collectedLights.Sort((a, b) => a.DistanceSq.CompareTo(b.DistanceSq));
-            if (_collectedLights.Count > ModelLight.MaxPunctualLights) {
-                _collectedLights.RemoveRange(ModelLight.MaxPunctualLights, _collectedLights.Count - ModelLight.MaxPunctualLights);
-            }
-        }
-
-        /// 更新光照 UBO：太阳/月亮 + 全局 glTF 灯光
-        /// </summary>
-        protected void UpdateLightsUBO(float intensity) {
-            LightsData lightsData = new() {
-                LightCount = 1, Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
-            };
-            for (int i = 0; i < _collectedLights.Count && lightsData.LightCount <= 7; i++) {
-                CollectedLight cl = _collectedLights[i];
-                LightData ld = new() {
-                    Direction = cl.ViewDirection,
-                    Color = cl.Color,
-                    Intensity = cl.Intensity,
-                    Position = cl.ViewPosition,
-                    Type = cl.Type,
-                    Range = cl.Range,
-                    InnerConeCos = cl.InnerConeCos,
-                    OuterConeCos = cl.OuterConeCos
-                };
-                switch (lightsData.LightCount) {
-                    case 1: lightsData.Light1 = ld; break;
-                    case 2: lightsData.Light2 = ld; break;
-                    case 3: lightsData.Light3 = ld; break;
-                    case 4: lightsData.Light4 = ld; break;
-                    case 5: lightsData.Light5 = ld; break;
-                    case 6: lightsData.Light6 = ld; break;
-                    case 7: lightsData.Light7 = ld; break;
-                }
-                lightsData.LightCount++;
-            }
-            LightsUBO.Update(ref lightsData);
-        }
-
-        /// <summary>
         /// 更新 UV 变换 UBO（懒更新）
         /// </summary>
         protected void UpdateUVTransformUBO(ModelMaterial material) {
@@ -479,305 +344,6 @@ namespace Game {
             UVTransformData uvTransformData = MaterialUboBuilder.BuildUVTransformData(material);
             UVTransformUBO.Update(ref uvTransformData);
             UvTransformDirty = false;
-        }
-
-        /// <summary>
-        /// 设置深度测试
-        /// 通过 ApplyDepthStencilState 保持 GLWrapper 缓存同步
-        /// </summary>
-        protected virtual void SetupDepthState(ModelMaterial material) {
-            GLWrapper.ApplyDepthStencilState(DepthStencilState.Default);
-        }
-
-        /// <summary>
-        /// 设置剔除模式
-        /// 通过 ApplyRasterizerState 保持 GLWrapper 缓存同步
-        /// </summary>
-        protected virtual void SetupCullMode(ModelMaterial material, bool isNegativeScale = false) {
-            // Always set correct cull mode first to establish FrontFace direction
-            // (gl_FrontFacing in shader depends on it, even for double-sided materials).
-            // CullMode.None does NOT reset FrontFace, so we establish it via a culling
-            // state first, then optionally switch to no-cull for double-sided materials.
-            RasterizerState state = isNegativeScale ? RasterizerState.CullClockwiseScissor : RasterizerState.CullCounterClockwiseScissor;
-            GLWrapper.ApplyRasterizerState(state);
-            if (material?.DoubleSided == true) {
-                GLWrapper.ApplyRasterizerState(RasterizerState.CullNoneScissor);
-            }
-        }
-
-        /// <summary>
-        /// 设置混合模式
-        /// 必须通过 ApplyBlendState 设置，保持 GLWrapper.m_blendState 缓存同步。
-        /// 直接调用 Enable/Disable(Blend) 会绕过缓存，导致后续 Display.DrawIndexed
-        /// 的 ApplyBlendState 跳过 GL 调用，混合状态异常。
-        /// </summary>
-        protected virtual void SetupBlendMode(ModelMaterial material, RenderContext context) {
-            // Transmission + 线性输出时禁用 blend（transmission pass 不需要混合）
-            if (material?.Transmission?.IsEnabled == true
-                && context.UseLinearOutput) {
-                GLWrapper.ApplyBlendState(BlendState.Opaque);
-                return;
-            }
-            ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
-            GLWrapper.ApplyBlendState(alphaMode == ModelAlphaMode.Blend ? BlendState.NonPremultiplied : BlendState.Opaque);
-        }
-
-        /// <summary>
-        /// 绘制网格
-        /// </summary>
-        protected virtual void DrawMesh(ModelMesh mesh) {
-            if (mesh == null) {
-                return;
-            }
-
-            // 同步 Display.Viewport 到 GL（包含 DepthRange）
-            // 本渲染器直接调用 GLWrapper.GL.DrawElements 绕过 Display.DrawIndexed，
-            // 不会触发 GLWrapper.ApplyViewportScissor。
-            // 若不手动同步，ComponentFirstPersonModel 的压缩深度范围会残留，
-            // 导致 PBR 模型深度值异常，不被地形遮挡。
-            GLWrapper.ApplyViewportScissor(Display.Viewport, Display.ScissorRectangle, Display.RasterizerState.ScissorTestEnable);
-            foreach (ModelMeshPart part in mesh.MeshParts) {
-                DrawMeshPart(part);
-            }
-        }
-
-        /// <summary>
-        /// 绘制网格部件
-        /// </summary>
-        protected virtual void DrawMeshPart(ModelMeshPart part) {
-            if (part?.VertexBuffer == null
-                || part.IndexBuffer == null) {
-                return;
-            }
-
-            // 绑定顶点缓冲
-            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, part.VertexBuffer.m_buffer);
-            GLWrapper.BindBuffer(BufferTargetARB.ElementArrayBuffer, part.IndexBuffer.m_buffer);
-
-            // 设置顶点属性
-            SetupVertexAttributes(part.VertexBuffer.VertexDeclaration);
-
-            // 绘制
-            unsafe {
-                IntPtr indexOffset = new(part.StartIndex * part.IndexBuffer.IndexFormat.GetSize());
-                GLWrapper.GL.DrawElements(
-                    GLWrapper.TranslatePrimitiveType(part.PrimitiveType),
-                    (uint)part.IndicesCount,
-                    GLWrapper.TranslateIndexFormat(part.IndexBuffer.IndexFormat),
-                    indexOffset.ToPointer()
-                );
-            }
-        }
-
-        /// <summary>
-        /// 设置顶点属性
-        /// 将 VertexDeclaration 中的 semantic 映射到着色器的 attribute location
-        /// </summary>
-        protected virtual void SetupVertexAttributes(VertexDeclaration declaration) {
-            if (declaration == null) {
-                return;
-            }
-
-            // 禁用所有 attribute（最多 8 个）
-            for (int i = 0; i < 8; i++) {
-                GLWrapper.VertexAttribArray(i, false);
-            }
-
-            // 遍历 vertex elements，映射到 attribute locations
-            foreach (VertexElement element in declaration.VertexElements) {
-                int location = SemanticToLocation(element.Semantic);
-                if (location < 0) {
-                    continue;
-                }
-                GLWrapper.TranslateVertexElementFormat(element.Format, out VertexAttribPointerType type, out bool normalize);
-                int size = element.Format.GetElementsCount();
-                int stride = declaration.VertexStride;
-                unsafe {
-                    GLWrapper.GL.VertexAttribPointer((uint)location, size, type, normalize, (uint)stride, new IntPtr(element.Offset).ToPointer());
-                }
-                GLWrapper.VertexAttribArray(location, true);
-            }
-        }
-
-        protected void EnsureInstanceBuffer() {
-            if (_instanceBufferCreated) {
-                return;
-            }
-            unsafe {
-                GLWrapper.GL.GenBuffers(1, out uint buffer);
-                _instanceVBO = (int)buffer;
-                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
-                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 64, (void*)0, BufferUsageARB.DynamicDraw);
-                GLWrapper.GL.GenBuffers(1, out uint lightBuffer);
-                _instanceLightVBO = (int)lightBuffer;
-                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
-                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 8, (void*)0, BufferUsageARB.DynamicDraw);
-            }
-            _instanceBufferCreated = true;
-        }
-
-        protected void UploadInstanceData(Matrix4x4[] matrices, int count) {
-            EnsureInstanceBuffer();
-            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
-            unsafe {
-                fixed (Matrix4x4* ptr = matrices) {
-                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 64), ptr);
-                }
-            }
-        }
-
-        protected void UploadInstanceLightData(Vector2[] lightData, int count) {
-            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
-            unsafe {
-                fixed (Vector2* ptr = lightData) {
-                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 8), ptr);
-                }
-            }
-        }
-
-        protected void SetupInstanceAttributes() {
-            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
-            unsafe {
-                for (int i = 0; i < 4; i++) {
-                    uint loc = (uint)(8 + i);
-                    GLWrapper.GL.VertexAttribPointer(loc, 4, VertexAttribPointerType.Float, false, 64, new IntPtr(i * 16).ToPointer());
-                    GLWrapper.GL.EnableVertexAttribArray(loc);
-                    GLWrapper.GL.VertexAttribDivisor(loc, 1);
-                }
-            }
-            // Per-instance light: vec2 (terrainLight, sunVisible)
-            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
-            unsafe {
-                GLWrapper.GL.VertexAttribPointer(InstanceLightAttribLocation, 2, VertexAttribPointerType.Float, false, 8, (void*)0);
-                GLWrapper.GL.EnableVertexAttribArray(InstanceLightAttribLocation);
-                GLWrapper.GL.VertexAttribDivisor(InstanceLightAttribLocation, 1);
-            }
-        }
-
-        protected void DisableInstanceAttributes() {
-            for (int i = 0; i < 4; i++) {
-                GLWrapper.GL.DisableVertexAttribArray((uint)(8 + i));
-            }
-            GLWrapper.GL.DisableVertexAttribArray(InstanceLightAttribLocation);
-        }
-
-        /// <summary>
-        /// 实例化绘制网格
-        /// </summary>
-        protected virtual void DrawMeshInstanced(ModelMesh mesh, int instanceCount) {
-            if (mesh == null) {
-                return;
-            }
-            GLWrapper.ApplyViewportScissor(Display.Viewport, Display.ScissorRectangle, Display.RasterizerState.ScissorTestEnable);
-            VertexDeclaration lastDecl = null;
-            foreach (ModelMeshPart part in mesh.MeshParts) {
-                if (part?.VertexBuffer == null
-                    || part.IndexBuffer == null) {
-                    continue;
-                }
-                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, part.VertexBuffer.m_buffer);
-                GLWrapper.BindBuffer(BufferTargetARB.ElementArrayBuffer, part.IndexBuffer.m_buffer);
-                if (part.VertexBuffer.VertexDeclaration != lastDecl) {
-                    SetupVertexAttributes(part.VertexBuffer.VertexDeclaration);
-                    lastDecl = part.VertexBuffer.VertexDeclaration;
-                }
-                unsafe {
-                    IntPtr indexOffset = new(part.StartIndex * part.IndexBuffer.IndexFormat.GetSize());
-                    GLWrapper.GL.DrawElementsInstanced(
-                        GLWrapper.TranslatePrimitiveType(part.PrimitiveType),
-                        (uint)part.IndicesCount,
-                        GLWrapper.TranslateIndexFormat(part.IndexBuffer.IndexFormat),
-                        indexOffset.ToPointer(),
-                        (uint)instanceCount
-                    );
-                }
-            }
-        }
-
-        /// <summary>
-        /// 将 vertex semantic 字符串映射到着色器 attribute location
-        /// </summary>
-        protected static int SemanticToLocation(string semantic) {
-            return semantic switch {
-                "POSITION" => 0,
-                "NORMAL" => 1,
-                "TEXCOORD" => 2,
-                "TEXCOORD0" => 2,
-                "TEXCOORD1" => 3,
-                "TEXCOORD2" => -1,
-                "COLOR" => 4,
-                "TANGENT" => 5,
-                "BLENDINDICES" => 6,
-                "BLENDWEIGHTS" => 7,
-                _ => -1
-            };
-        }
-
-        protected void UpdateContextHash(RenderContext context) {
-            (bool UseIBL, bool UseLinearOutput, ToneMapMode ToneMapMode, bool HasPunctualLight, DebugChannel DebugChannel) contextParams = (
-                context.UseIBL, context.UseLinearOutput, context.ToneMapMode, context.HasPunctualLight, context.DebugChannel);
-            if (_lastContextParams == contextParams) {
-                return;
-            }
-            _lastContextParams = contextParams;
-            CachedContextHash = ComputeContextHash(context);
-        }
-
-        /// <summary>
-        /// 计算渲染上下文的 defines hash
-        /// </summary>
-        protected static int ComputeContextHash(RenderContext context) {
-            unchecked {
-                int hash = 17;
-                if (context.UseIBL) {
-                    hash = hash * 31 + "USE_IBL 1".GetHashCode();
-                }
-                if (context.HasPunctualLight) {
-                    hash = hash * 31 + "USE_PUNCTUAL 1".GetHashCode();
-                }
-                if (context.UseLinearOutput) {
-                    hash = hash * 31 + "LINEAR_OUTPUT 1".GetHashCode();
-                }
-                else {
-                    string tonemapDefine = context.ToneMapMode switch {
-                        ToneMapMode.KhrPbrNeutral => "TONEMAP_KHR_PBR_NEUTRAL 1",
-                        ToneMapMode.AcesNarkowicz => "TONEMAP_ACES_NARKOWICZ 1",
-                        ToneMapMode.AcesHill => "TONEMAP_ACES_HILL 1",
-                        ToneMapMode.AcesHillExposureBoost => "TONEMAP_ACES_HILL_EXPOSURE_BOOST 1",
-                        _ => "LINEAR_OUTPUT 1"
-                    };
-                    hash = hash * 31 + tonemapDefine.GetHashCode();
-                }
-                if (context.DebugChannel != DebugChannel.None) {
-                    hash = hash * 31 + $"DEBUG {(int)context.DebugChannel}".GetHashCode();
-                }
-                return hash;
-            }
-        }
-
-        /// <summary>
-        /// 设置灯光数量并更新上下文 hash（shader 变体选择用）
-        /// </summary>
-        protected void SetHasPunctualLight(bool value) {
-            if (CurrentContext.HasPunctualLight == value) {
-                return;
-            }
-            CurrentContext.HasPunctualLight = value;
-            CachedContextHash = ComputeContextHash(CurrentContext);
-        }
-
-        protected static int AdjustContextHashForMaterial(int contextHash, ModelMaterial material, RenderContext context) {
-            unchecked {
-                if (material?.DiffuseTransmission?.IsEnabled == true
-                    && !context.UseIBL) {
-                    contextHash ^= "USE_IBL 1".GetHashCode();
-                }
-                if (material?.Unlit?.IsEnabled == true
-                    && context.HasPunctualLight) {
-                    contextHash ^= "USE_PUNCTUAL 1".GetHashCode();
-                }
-                return contextHash;
-            }
         }
 
         /// <summary>
@@ -827,19 +393,6 @@ namespace Game {
             if (location >= 0) {
                 GLWrapper.GL.Uniform1(location, JointTextureSlot);
             }
-        }
-
-        // 全局灯光（每帧收集，按距相机距离排序）
-        protected struct CollectedLight {
-            public Vector3 ViewPosition;
-            public Vector3 ViewDirection;
-            public Vector3 Color;
-            public float Intensity;
-            public float Range;
-            public int Type;
-            public float InnerConeCos;
-            public float OuterConeCos;
-            public float DistanceSq;
         }
     }
 }
