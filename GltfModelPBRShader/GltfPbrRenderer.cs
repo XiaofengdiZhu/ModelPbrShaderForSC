@@ -57,6 +57,7 @@ namespace Game {
         Shader _currentInstanceShader;
         bool _hasTransmissionThisFrame;
         bool _shadersLoaded;
+        List<SubsystemModelsRenderer.ModelData> _allModels;
 
         public IblSampler IblSampler { get; private set; }
 
@@ -137,7 +138,7 @@ namespace Game {
 
         #region Queue Preparation
 
-        public override void PrepareCustomQueues(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
+        protected override void PrepareCustomQueues(List<SubsystemModelsRenderer.ModelData> allModels) {
             _opaqueEntries.Clear();
             _scatterEntries.Clear();
             _transparentBeforeWater.Clear();
@@ -253,6 +254,12 @@ namespace Game {
             base.Dispose();
         }
 
+        public override void BeginFrame(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
+            _allModels = allModels;
+            base.BeginFrame(camera, allModels);
+            PrepareCustomQueues(allModels);
+        }
+
         public struct CelestialBodyCacheEntry {
             public bool Visible;
             public double Timestamp;
@@ -260,7 +267,7 @@ namespace Game {
 
         #region Render Passes
 
-        public override void RenderOpaquePass(Camera camera) {
+        public override void RenderOpaquePass() {
             // 1. Scatter pass
             if (_scatterEntries.Count > 0) {
                 _framebufferManager.EnsureScatterFramebuffer();
@@ -270,7 +277,7 @@ namespace Game {
                 CurrentContext.IsScatterPass = true;
                 UpdateContextHash(CurrentContext);
                 foreach (PartRenderEntry entry in _scatterEntries) {
-                    RenderSingleEntry(entry, camera);
+                    RenderSingleEntry(entry);
                 }
                 CurrentContext.UseLinearOutput = false;
                 CurrentContext.IsScatterPass = false;
@@ -280,18 +287,18 @@ namespace Game {
 
             // 2. Opaque pass
             if (_opaqueEntries.Count > 0) {
-                RenderOpaqueBatched(camera);
+                RenderOpaqueBatched();
             }
 
-            // 注意：Transmission FBO 捕获在 RenderTransparentPass(drawOrder 150) 执行
-            // SC 天空 drawOrder 5，水面 drawOrder ~100，都在 150 之前
+            // 3. Queue shadows + DrawExtras
+            QueueShadowsAndDrawExtras();
         }
 
         bool _transmissionFboCaptured;
         bool _transparentRendered;
 
-        public override void RenderTransparentPass(Camera camera, bool underwater) {
-            // drawOrder 150 被调用两次(underwater=false/true)，只在第一次执行全部透明渲染
+        public override void RenderTransparentPass(bool underwater) {
+            // drawOrder 201 被调用两次(underwater=false/true)，只在第一次执行全部透明渲染
             if (_transparentRendered) {
                 return;
             }
@@ -303,7 +310,7 @@ namespace Game {
             List<PartRenderEntry> entries = _allTransparentEntries;
 
             // 计算 depth 用于排序
-            Matrix viewMatrix = camera.ViewMatrix;
+            Matrix viewMatrix = _camera.ViewMatrix;
             for (int i = 0; i < entries.Count; i++) {
                 PartRenderEntry entry = entries[i];
                 Vector3 center = entry.Mesh.BoundingBox.Center();
@@ -320,12 +327,12 @@ namespace Game {
             if (_hasTransmissionThisFrame) {
                 foreach (PartRenderEntry entry in entries) {
                     if (entry.QueueType != PartRenderQueue.Transmission) {
-                        RenderSingleEntry(entry, camera);
+                        RenderSingleEntry(entry);
                     }
                 }
             }
 
-            // Transmission FBO 捕获（此时 opaque + alpha blend 都已在 backbuffer 中）
+            // Transmission FBO 捕获（此时 opaque + alpha blend + 阴影贴花都已在 backbuffer 中）
             if (_hasTransmissionThisFrame && !_transmissionFboCaptured) {
                 _transmissionFboCaptured = true;
                 _framebufferManager.EnsureTransmissionFramebuffer();
@@ -341,13 +348,13 @@ namespace Game {
                 // 非 Transmission 已渲染，只渲染 Transmission
                 foreach (PartRenderEntry entry in entries) {
                     if (entry.QueueType == PartRenderQueue.Transmission) {
-                        RenderSingleEntry(entry, camera);
+                        RenderSingleEntry(entry);
                     }
                 }
             }
             else {
                 foreach (PartRenderEntry entry in entries) {
-                    RenderSingleEntry(entry, camera);
+                    RenderSingleEntry(entry);
                 }
             }
         }
@@ -356,7 +363,7 @@ namespace Game {
 
         #region Core Rendering
 
-        void RenderSingleEntry(PartRenderEntry entry, Camera camera) {
+        void RenderSingleEntry(PartRenderEntry entry) {
             if (entry.Part == null) {
                 return;
             }
@@ -370,7 +377,7 @@ namespace Game {
             if (hasSkin) {
                 jointTex = GetOrCreateJointTexture(model);
                 SubsystemModelsRenderer smr = _subsystemModelsRenderer;
-                Matrix invertedView = camera.InvertedViewMatrix;
+                Matrix invertedView = _camera.InvertedViewMatrix;
                 jointCount = smr.CalculateJointMatrices(cm, model, invertedView, smr.m_jointMatricesBuffer);
                 jointTex.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
             }
@@ -434,7 +441,7 @@ namespace Game {
             }
         }
 
-        void RenderOpaqueBatched(Camera camera) {
+        void RenderOpaqueBatched() {
             // 分离蒙皮和非蒙皮
             _skinnedOpaqueEntries.Clear();
             foreach (PartRenderEntry e in _opaqueEntries) {
@@ -602,7 +609,7 @@ namespace Game {
 
             // 蒙皮：逐个渲染
             foreach (PartRenderEntry entry in _skinnedOpaqueEntries) {
-                RenderSingleEntry(entry, camera);
+                RenderSingleEntry(entry);
             }
         }
 
@@ -761,6 +768,33 @@ namespace Game {
                 MaterialExtensionData extData = MaterialUboBuilder.BuildMaterialExtensionData(material);
                 _materialExtUBO.Update(ref extData);
                 LastExtensionFlags = extensionFlags;
+            }
+        }
+
+        /// <summary>
+        /// 为非 underwater 模型排队贴花阴影，并调用所有模型的 DrawExtras
+        /// 在 RenderOpaquePass（drawOrder 1）末尾调用，确保阴影在 drawOrder 200 前排好
+        /// </summary>
+        void QueueShadowsAndDrawExtras() {
+            SubsystemShadows shadows = _subsystemModelsRenderer.m_subsystemShadows;
+            foreach (SubsystemModelsRenderer.ModelData md in _allModels) {
+                bool isUnderwater = md.ComponentModel.RenderingMode == ModelRenderingMode.TransparentAfterWater;
+                if (!isUnderwater
+                    && md.ComponentBody != null
+                    && md.ComponentModel.CastsShadow) {
+                    Vector3 shadowPosition = md.ComponentBody.Position + new Vector3(0f, 0.02f, 0f);
+                    BoundingBox boundingBox = md.ComponentBody.BoundingBox;
+                    float shadowDiameter = 2.25f * (boundingBox.Max.X - boundingBox.Min.X);
+                    shadows.QueueShadow(_camera, shadowPosition, shadowDiameter, md.ComponentModel.Opacity ?? 1f);
+                }
+                ModsManager.HookAction(
+                    "OnModelRendererDrawExtra",
+                    modLoader => {
+                        modLoader.OnModelRendererDrawExtra(_subsystemModelsRenderer, md, _camera, null);
+                        return false;
+                    }
+                );
+                md.ComponentModel.DrawExtras(_camera);
             }
         }
 

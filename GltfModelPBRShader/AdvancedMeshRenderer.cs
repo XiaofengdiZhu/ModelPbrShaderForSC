@@ -101,6 +101,7 @@ namespace Game {
         protected SubsystemTerrain _subsystemTerrain;
         protected SubsystemTimeOfDay _subsystemTimeOfDay;
         Vector3 _viewLightDir;
+        protected Camera _camera;
         protected RenderContext CurrentContext = new();
         protected int LastExtensionFlags;
 
@@ -174,9 +175,10 @@ namespace Game {
         }
 
         /// <summary>
-        /// 开始帧渲染
+        /// 开始帧渲染：准备队列 + 设置光源 + 更新 UBO
         /// </summary>
-        public virtual void BeginFrame(Camera camera) {
+        public virtual void BeginFrame(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
+            _camera = camera;
             // Build RenderContext from subsystems
             float timeOfDay = _subsystemTimeOfDay.TimeOfDay;
             float midday = _subsystemTimeOfDay.Midday;
@@ -268,11 +270,14 @@ namespace Game {
             MaterialTextureBinder.ResetFrameState();
         }
 
-        public virtual void PrepareCustomQueues(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) { }
+        /// <summary>
+        /// 准备自定义渲染队列（由子类在 BeginFrame 末尾调用）
+        /// </summary>
+        protected virtual void PrepareCustomQueues(List<SubsystemModelsRenderer.ModelData> allModels) { }
 
-        public virtual void RenderOpaquePass(Camera camera) { }
+        public virtual void RenderOpaquePass() { }
 
-        public virtual void RenderTransparentPass(Camera camera, bool underwater) { }
+        public virtual void RenderTransparentPass(bool underwater) { }
 
         public virtual void Dispose() {
             SceneUBO?.Dispose();
@@ -750,11 +755,6 @@ namespace Game {
             }
         }
 
-        /// <summary>
-        /// 根据材质特性调整上下文 hash：
-        /// - DiffuseTransmission 强制启用 IBL
-        /// - Unlit 材质移除 USE_PUNCTUAL
-        /// </summary>
         /// <summary>
         /// 设置灯光数量并更新上下文 hash（shader 变体选择用）
         /// </summary>
