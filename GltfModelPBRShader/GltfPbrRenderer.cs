@@ -497,7 +497,7 @@ namespace Game {
                 _currentInstanceShader = shader;
                 shader.PrepareForDrawing();
                 GLWrapper.UseProgram(shader.m_program);
-                SetPerFrameUniformsBatch(shader, groupEntries);
+                SetPerFrameUniformsBatch(shader);
                 UpdateRenderStateUBOForInstancing();
                 UpdateLightsUBO(1f);
                 UpdateMaterialUBOs(effectiveMaterial, false);

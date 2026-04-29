@@ -68,7 +68,7 @@ namespace Game {
             UpdateLightsUBO(modelData.Light);
         }
 
-        void SetPerFrameUniformsBatch(Shader shader, List<PartRenderEntry> entries) {
+        void SetPerFrameUniformsBatch(Shader shader) {
             int programHandle = shader.m_program;
             if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
                 glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
@@ -83,10 +83,10 @@ namespace Game {
             if (entry.TextureOverride != null) {
                 MaterialTextureBinder.BindTexture2D(entry.TextureOverride, MaterialTextureSlot.BaseColor);
             }
-            else if (entry.Material != null) {
+            else {
                 Model model = entry.ModelData.ComponentModel?.Model;
                 if (model != null) {
-                    BindMaterialTextures(model, entry.Material, shader, null);
+                    BindMaterialTextures(model, effectiveMaterial, shader, null);
                 }
             }
             MaterialTextureBinder.SetTextureSlotUniforms(shader);

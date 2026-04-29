@@ -6,7 +6,8 @@ using Silk.NET.OpenGLES;
 namespace Game {
     partial class AdvancedMeshRenderer {
         protected virtual void SetupDepthState(ModelMaterial material) {
-            GLWrapper.ApplyDepthStencilState(DepthStencilState.Default);
+            ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
+            GLWrapper.ApplyDepthStencilState(alphaMode == ModelAlphaMode.Blend ? DepthStencilState.DepthRead : DepthStencilState.Default);
         }
 
         protected virtual void SetupCullMode(ModelMaterial material, bool isNegativeScale = false) {
