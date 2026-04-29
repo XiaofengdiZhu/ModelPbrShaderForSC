@@ -41,7 +41,7 @@ namespace Game {
         }
 
         public override void Dispose() {
-            PbrRenderer.CelestialBodyCache.Clear();
+            PbrRenderer?.CelestialBodyCache.Clear();
         }
     }
 }

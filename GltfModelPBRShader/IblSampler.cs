@@ -18,6 +18,7 @@ namespace Game {
         readonly int _sheenSampleCount = 64;
         readonly int _textureSize = 256;
         uint _cubemapTexture;
+        bool _disposed;
         uint _framebuffer;
         uint _iblFilteringShader;
         uint _iblFragShader;
@@ -35,44 +36,61 @@ namespace Game {
         public int MipCount { get; private set; }
 
         public void Dispose() {
+            if (_disposed) {
+                return;
+            }
+            _disposed = true;
             if (_inputTexture != 0) {
                 GLWrapper.GL.DeleteTexture(_inputTexture);
+                _inputTexture = 0;
             }
             if (_cubemapTexture != 0) {
                 GLWrapper.GL.DeleteTexture(_cubemapTexture);
+                _cubemapTexture = 0;
             }
             if (LambertianTexture != 0) {
                 GLWrapper.GL.DeleteTexture(LambertianTexture);
+                LambertianTexture = 0;
             }
             if (GGXTexture != 0) {
                 GLWrapper.GL.DeleteTexture(GGXTexture);
+                GGXTexture = 0;
             }
             if (SheenTexture != 0) {
                 GLWrapper.GL.DeleteTexture(SheenTexture);
+                SheenTexture = 0;
             }
             if (GGXLut != 0) {
                 GLWrapper.GL.DeleteTexture(GGXLut);
+                GGXLut = 0;
             }
             if (CharlieLut != 0) {
                 GLWrapper.GL.DeleteTexture(CharlieLut);
+                CharlieLut = 0;
             }
             if (_framebuffer != 0) {
                 GLWrapper.GL.DeleteFramebuffer(_framebuffer);
+                _framebuffer = 0;
             }
             if (_panoramaToCubemapShader != 0) {
                 GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
+                _panoramaToCubemapShader = 0;
             }
             if (_iblFilteringShader != 0) {
                 GLWrapper.GL.DeleteProgram(_iblFilteringShader);
+                _iblFilteringShader = 0;
             }
             if (_panoramaVertShader != 0) {
                 GLWrapper.GL.DeleteShader(_panoramaVertShader);
+                _panoramaVertShader = 0;
             }
             if (_panoramaFragShader != 0) {
                 GLWrapper.GL.DeleteShader(_panoramaFragShader);
+                _panoramaFragShader = 0;
             }
             if (_iblFragShader != 0) {
                 GLWrapper.GL.DeleteShader(_iblFragShader);
+                _iblFragShader = 0;
             }
         }
 

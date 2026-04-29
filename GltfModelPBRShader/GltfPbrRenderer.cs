@@ -31,6 +31,7 @@ namespace Game {
         };
 
         static readonly int InstancedHashSalt = "__INSTANCED__".GetHashCode();
+        readonly HashSet<Model> _activeSkinnedModels = [];
         readonly List<PartRenderEntry> _allTransparentEntries = [];
         readonly PbrFramebufferManager _framebufferManager = new();
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> _instanceGroups = new();
@@ -49,6 +50,7 @@ namespace Game {
         readonly Dictionary<int, int> _scatterSamplerLocCache = [];
         readonly HashSet<int> _scatterSamplesSetShaders = [];
         readonly List<PartRenderEntry> _skinnedOpaqueEntries = [];
+        readonly List<Model> _staleJointModels = [];
         readonly Dictionary<int, int> _transmissionSamplerLocCache = [];
         readonly Dictionary<int, (int sizeLoc, int screenLoc)> _transmissionSizeLocCache = [];
         readonly List<PartRenderEntry> _transparentAfterWater = [];
@@ -147,6 +149,7 @@ namespace Game {
             _hasTransmissionThisFrame = false;
             _transmissionFboCaptured = false;
             _transparentRendered = false;
+            _activeSkinnedModels.Clear();
             Viewport vp = Display.Viewport;
             _framebufferManager.SetSize(vp.Width, vp.Height);
             foreach (SubsystemModelsRenderer.ModelData md in allModels) {
@@ -154,6 +157,9 @@ namespace Game {
                 Model model = cm.Model;
                 if (model == null) {
                     continue;
+                }
+                if (model.HasSkin) {
+                    _activeSkinnedModels.Add(model);
                 }
                 bool isUnderwater = cm.RenderingMode == ModelRenderingMode.TransparentAfterWater;
                 Texture2D textureOverride = cm.TextureOverride;
@@ -199,6 +205,19 @@ namespace Game {
                     }
                 }
             }
+            // 清理已移除模型的 JointTexture，释放 GPU 资源
+            if (_jointTextures.Count > 0) {
+                foreach (Model model in _jointTextures.Keys) {
+                    if (!_activeSkinnedModels.Contains(model)) {
+                        _staleJointModels.Add(model);
+                    }
+                }
+                foreach (Model model in _staleJointModels) {
+                    _jointTextures[model].Dispose();
+                    _jointTextures.Remove(model);
+                }
+                _staleJointModels.Clear();
+            }
             CollectGlobalLights(allModels);
         }
 
@@ -239,6 +258,10 @@ namespace Game {
 
         public override void Dispose() {
             IblSampler?.Dispose();
+            foreach (var jt in _jointTextures.Values) {
+                jt.Dispose();
+            }
+            _jointTextures.Clear();
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
             _volumeScatterUBO?.Dispose();
