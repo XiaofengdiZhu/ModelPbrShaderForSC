@@ -26,7 +26,7 @@ namespace Game {
                 return entry.Material;
             }
             if (entry.TextureOverride != null) {
-                return entry.TextureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
+                return entry.TextureOverride is RenderTarget2D ? DefaultDielectricMaskMaterial : DefaultDielectricMaterial;
             }
             return DefaultDielectricMaterial;
         }

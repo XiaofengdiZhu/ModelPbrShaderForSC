@@ -73,28 +73,22 @@ namespace Game {
             LightsData lightsData = new() {
                 LightCount = 1, Light0 = new LightData { Direction = _viewLightDir, Color = _baseLightColor * intensity, Intensity = 1f, Type = 0 }
             };
-            for (int i = 0; i < _collectedLights.Count && lightsData.LightCount <= 7; i++) {
-                CollectedLight cl = _collectedLights[i];
-                LightData ld = new() {
-                    Direction = cl.ViewDirection,
-                    Color = cl.Color,
-                    Intensity = cl.Intensity,
-                    Position = cl.ViewPosition,
-                    Type = cl.Type,
-                    Range = cl.Range,
-                    InnerConeCos = cl.InnerConeCos,
-                    OuterConeCos = cl.OuterConeCos
-                };
-                switch (lightsData.LightCount) {
-                    case 1: lightsData.Light1 = ld; break;
-                    case 2: lightsData.Light2 = ld; break;
-                    case 3: lightsData.Light3 = ld; break;
-                    case 4: lightsData.Light4 = ld; break;
-                    case 5: lightsData.Light5 = ld; break;
-                    case 6: lightsData.Light6 = ld; break;
-                    case 7: lightsData.Light7 = ld; break;
+            unsafe {
+                LightData* basePtr = &lightsData.Light0;
+                for (int i = 0; i < _collectedLights.Count && lightsData.LightCount < 8; i++) {
+                    CollectedLight cl = _collectedLights[i];
+                    basePtr[lightsData.LightCount] = new LightData {
+                        Direction = cl.ViewDirection,
+                        Color = cl.Color,
+                        Intensity = cl.Intensity,
+                        Position = cl.ViewPosition,
+                        Type = cl.Type,
+                        Range = cl.Range,
+                        InnerConeCos = cl.InnerConeCos,
+                        OuterConeCos = cl.OuterConeCos
+                    };
+                    lightsData.LightCount++;
                 }
-                lightsData.LightCount++;
             }
             LightsUBO.Update(ref lightsData);
         }

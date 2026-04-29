@@ -140,6 +140,8 @@ namespace Game {
             // 重置 GLWrapper 内部缓存，强制后续渲染重新设置 GL 状态
             // IblSampler 通过 GLWrapper.GL 直接调用绕过了 GLWrapper 的缓存，
             // 导致缓存与实际 GL 状态不同步，必须在此处重置
+            // 注意：引擎 API 未暴露 InvalidateCachedState() 方法，只能直接写字段。
+            // 引擎新增缓存字段时需同步更新此处。
             GLWrapper.m_program = -1;
             GLWrapper.m_framebuffer = -1;
             GLWrapper.m_lastShader = null;

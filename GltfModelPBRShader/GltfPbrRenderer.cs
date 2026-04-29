@@ -26,7 +26,7 @@ namespace Game {
 
         static readonly Comparison<PartRenderEntry> BackToFrontComparison = (a, b) => b.Depth.CompareTo(a.Depth);
 
-        static readonly ModelMaterial DefaultDielectricBlendMaterial = new() {
+        static readonly ModelMaterial DefaultDielectricMaskMaterial = new() {
             MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One, AlphaMode = ModelAlphaMode.Mask, AlphaCutoff = 0.01f
         };
 
@@ -498,7 +498,7 @@ namespace Game {
                     effectiveMaterial = material;
                 }
                 else if (textureOverride != null) {
-                    effectiveMaterial = textureOverride is RenderTarget2D ? DefaultDielectricBlendMaterial : DefaultDielectricMaterial;
+                    effectiveMaterial = textureOverride is RenderTarget2D ? DefaultDielectricMaskMaterial : DefaultDielectricMaterial;
                 }
                 else {
                     effectiveMaterial = DefaultDielectricMaterial;
