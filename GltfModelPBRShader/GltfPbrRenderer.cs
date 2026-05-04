@@ -61,6 +61,21 @@ namespace Game {
         bool _hasTransmissionThisFrame;
         bool _shadersLoaded;
 
+        // 动态 IBL：每玩家环境数据
+        public readonly Dictionary<int, PlayerEnvironmentData> PlayerEnvironments = new();
+        EnvironmentCapture _environmentCapture;
+        PlayerEnvironmentData _currentPlayerData;
+
+        // 捕获常量
+        const float CaptureDistanceThreshold = 1.5f;      // 触发捕获的移动距离（米）
+        const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
+        const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
+        const int EnvironmentMapBaseWidth = 512;          // 全景图基础宽度（降低以提升性能）
+        const float IblRangeBlocks = 16f;                 // IBL 启用范围（方块数）
+
+        // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
+        public bool DynamicIblEnabled { get; set; }
+
         public IblSampler IblSampler { get; private set; }
 
         public override bool HasIBL => IblSampler != null;
@@ -73,6 +88,100 @@ namespace Game {
             EnvironmentMap envMap = EnvironmentMap.LoadHDR(hdrStream);
             IblSampler.Process(envMap);
             MipCount = IblSampler.MipCount;
+            envMap.Dispose();
+        }
+
+        /// <summary>
+        /// 初始化动态 IBL 系统
+        /// </summary>
+        /// <param name="subsystemTerrain">地形子系统</param>
+        /// <param name="subsystemSky">天空子系统</param>
+        /// <param name="gameWidget">游戏 widget</param>
+        public void InitializeDynamicIbl(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky, GameWidget gameWidget) {
+            _environmentCapture = new EnvironmentCapture();
+            _environmentCapture.Initialize(subsystemTerrain, subsystemSky, gameWidget);
+            DynamicIblEnabled = true;
+            Log.Information("[glTF PBR Shader] Dynamic IBL initialized");
+        }
+
+        /// <summary>
+        /// 获取或创建玩家环境数据
+        /// </summary>
+        /// <param name="camera">相机（用于获取玩家索引）</param>
+        /// <returns>玩家环境数据</returns>
+        public PlayerEnvironmentData GetOrCreatePlayerData(Camera camera) {
+            // 从 camera.GameWidget.PlayerData 获取玩家索引
+            int playerIndex = camera.GameWidget?.PlayerData?.PlayerIndex ?? 0;
+            if (!PlayerEnvironments.TryGetValue(playerIndex, out PlayerEnvironmentData data)) {
+                data = new PlayerEnvironmentData {
+                    IblSampler = new IblSampler(),
+                    LastCapturePosition = Vector3.Zero,
+                    LastCaptureTime = 0,
+                    CachedPlayerLight = 1f
+                };
+                PlayerEnvironments[playerIndex] = data;
+                Log.Information($"[glTF PBR Shader] Created player environment data for player {playerIndex}");
+            }
+            return data;
+        }
+
+        /// <summary>
+        /// 清理玩家环境数据（玩家断线时调用）
+        /// </summary>
+        /// <param name="playerIndex">玩家索引</param>
+        public void CleanupPlayerData(int playerIndex) {
+            if (PlayerEnvironments.TryGetValue(playerIndex, out PlayerEnvironmentData data)) {
+                data.Dispose();
+                PlayerEnvironments.Remove(playerIndex);
+                Log.Information($"[glTF PBR Shader] Cleaned up player environment data for player {playerIndex}");
+            }
+        }
+
+        /// <summary>
+        /// 检查是否应该捕获环境贴图
+        /// </summary>
+        bool ShouldCapture(PlayerEnvironmentData playerData, Vector3 currentPosition) {
+            float distanceMoved = Vector3.Distance(currentPosition, playerData.LastCapturePosition);
+            double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
+
+            if (distanceMoved > CaptureDistanceThreshold) {
+                return timeSinceCapture > CaptureTimeThresholdNear;
+            }
+            return timeSinceCapture > CaptureTimeThresholdFar;
+        }
+
+        /// <summary>
+        /// 更新玩家光照缓存
+        /// </summary>
+        void UpdatePlayerLightCache(PlayerEnvironmentData playerData, Vector3 playerEyePosition) {
+            float? light = LightingManager.CalculateSmoothLight(_subsystemTerrain, playerEyePosition);
+            playerData.CachedPlayerLight = light ?? _subsystemSky.SkyLightIntensity;
+        }
+
+        /// <summary>
+        /// 执行环境贴图捕获
+        /// </summary>
+        void CaptureEnvironment(PlayerEnvironmentData playerData, Vector3 capturePosition) {
+            if (_environmentCapture == null) {
+                return;
+            }
+
+            int width = EnvironmentMapBaseWidth;
+            int height = EnvironmentMapBaseWidth / 2;
+
+            // 捕获环境贴图
+            EnvironmentMap envMap = _environmentCapture.CaptureEnvironment(capturePosition, width, height);
+
+            // 处理为 IBL 采样器
+            playerData.IblSampler?.Dispose();
+            playerData.IblSampler = new IblSampler();
+            playerData.IblSampler.Process(envMap);
+            playerData.MipCount = playerData.IblSampler.MipCount;
+
+            // 更新捕获状态
+            playerData.LastCapturePosition = capturePosition;
+            playerData.LastCaptureTime = Time.FrameStartTime;
+
             envMap.Dispose();
         }
 
@@ -281,6 +390,25 @@ namespace Game {
 
         public override void BeginFrame(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
             _allModels = allModels;
+
+            // 动态 IBL：获取当前玩家数据并触发捕获
+            if (DynamicIblEnabled && _environmentCapture != null) {
+                _currentPlayerData = GetOrCreatePlayerData(camera);
+                Vector3 capturePosition = camera.ViewPosition;
+
+                // 更新玩家光照缓存
+                UpdatePlayerLightCache(_currentPlayerData, capturePosition);
+
+                // 检查是否需要捕获环境贴图
+                if (ShouldCapture(_currentPlayerData, capturePosition)) {
+                    CaptureEnvironment(_currentPlayerData, capturePosition);
+                }
+
+                // 使用当前玩家的 IBL 采样器
+                IblSampler = _currentPlayerData.IblSampler;
+                MipCount = _currentPlayerData.MipCount;
+            }
+
             base.BeginFrame(camera, allModels);
             PrepareCustomQueues(allModels);
         }
@@ -816,7 +944,7 @@ namespace Game {
 
         /// <summary>
         /// 计算 IBL 强度
-        /// 基于模型光照和距离计算 IBL 贡献强度
+        /// 基于模型光照和玩家光照缓存计算 IBL 贡献强度
         /// </summary>
         /// <param name="modelData">模型数据</param>
         /// <param name="worldMatrix">世界变换矩阵</param>
@@ -834,24 +962,40 @@ namespace Game {
             Vector3 cameraPosition = _camera.ViewPosition;
             float distanceSquared = Vector3.DistanceSquared(modelPosition, cameraPosition);
 
-            // IBL 有效范围（16 个方块）
-            const float IblRangeSquared = 16f * 16f;
-            if (distanceSquared > IblRangeSquared) {
+            // IBL 有效范围
+            float iblRangeSquared = IblRangeBlocks * IblRangeBlocks;
+            if (distanceSquared > iblRangeSquared) {
                 return 0f;
             }
 
-            // 基础 IBL 强度（简化版本：使用模型光照）
-            // 后续可扩展为基于玩家光照缓存计算
+            // 获取模型光照
             float modelLight = modelData.Light;
             if (modelLight <= 0f) {
                 return 0f;
             }
 
+            // 动态 IBL：使用玩家光照缓存计算强度比值
+            float iblStrength;
+            if (DynamicIblEnabled && _currentPlayerData != null) {
+                float playerLight = _currentPlayerData.CachedPlayerLight;
+                if (playerLight <= 0f) {
+                    return 0f;
+                }
+
+                // IBL 强度比值，开方以软化对比度
+                float ratio = modelLight / playerLight;
+                iblStrength = MathF.Sqrt(Math.Min(ratio, 1f));
+            }
+            else {
+                // 静态 IBL：使用模型光照
+                iblStrength = modelLight;
+            }
+
             // 距离衰减
-            float distanceFactor = 1f - (distanceSquared / IblRangeSquared);
+            float distanceFactor = 1f - (distanceSquared / iblRangeSquared);
 
             // 最终 IBL 强度
-            return modelLight * distanceFactor;
+            return iblStrength * distanceFactor;
         }
 
         #endregion
