@@ -19,6 +19,10 @@ namespace Game {
                 _instanceLightVBO = (int)lightBuffer;
                 GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
                 GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 8, (void*)0, BufferUsageARB.DynamicDraw);
+                GLWrapper.GL.GenBuffers(1, out uint iblBuffer);
+                _instanceIblStrengthVBO = (int)iblBuffer;
+                GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceIblStrengthVBO);
+                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 4, (void*)0, BufferUsageARB.DynamicDraw);
             }
             _instanceBufferCreated = true;
         }
@@ -42,6 +46,15 @@ namespace Game {
             }
         }
 
+        protected void UploadInstanceIblStrengthData(float[] iblStrengthData, int count) {
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceIblStrengthVBO);
+            unsafe {
+                fixed (float* ptr = iblStrengthData) {
+                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 4), ptr);
+                }
+            }
+        }
+
         protected void SetupInstanceAttributes() {
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceVBO);
             unsafe {
@@ -58,6 +71,12 @@ namespace Game {
                 GLWrapper.GL.EnableVertexAttribArray(InstanceLightAttribLocation);
                 GLWrapper.GL.VertexAttribDivisor(InstanceLightAttribLocation, 1);
             }
+            GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceIblStrengthVBO);
+            unsafe {
+                GLWrapper.GL.VertexAttribPointer(InstanceIblStrengthAttribLocation, 1, VertexAttribPointerType.Float, false, 4, (void*)0);
+                GLWrapper.GL.EnableVertexAttribArray(InstanceIblStrengthAttribLocation);
+                GLWrapper.GL.VertexAttribDivisor(InstanceIblStrengthAttribLocation, 1);
+            }
         }
 
         protected void DisableInstanceAttributes() {
@@ -65,6 +84,7 @@ namespace Game {
                 GLWrapper.GL.DisableVertexAttribArray((uint)(8 + i));
             }
             GLWrapper.GL.DisableVertexAttribArray(InstanceLightAttribLocation);
+            GLWrapper.GL.DisableVertexAttribArray(InstanceIblStrengthAttribLocation);
         }
 
         /// <summary>

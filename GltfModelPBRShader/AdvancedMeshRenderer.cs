@@ -25,8 +25,9 @@ namespace Game {
     public abstract partial class AdvancedMeshRenderer : ICustomModelRenderer {
         protected const int MaxInstancesPerBatch = 256;
 
-        // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2)
+        // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2), location 13: IBL strength (float)
         protected const int InstanceLightAttribLocation = 12;
+        protected const int InstanceIblStrengthAttribLocation = 13;
 
         /// <summary>
         /// 骨骼纹理纹理槽
@@ -50,7 +51,9 @@ namespace Game {
         // 缓存优化
         bool _instanceBufferCreated;
         protected Vector2[] _instanceLightData = new Vector2[MaxInstancesPerBatch];
+        protected float[] _instanceIblStrengthData = new float[MaxInstancesPerBatch];
         int _instanceLightVBO;
+        int _instanceIblStrengthVBO;
         protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
 
         // 实例化渲染
@@ -243,6 +246,8 @@ namespace Game {
                 GLWrapper.GL.DeleteBuffers(1u, in vbo);
                 uint lightVbo = (uint)_instanceLightVBO;
                 GLWrapper.GL.DeleteBuffers(1u, in lightVbo);
+                uint iblVbo = (uint)_instanceIblStrengthVBO;
+                GLWrapper.GL.DeleteBuffers(1u, in iblVbo);
                 _instanceBufferCreated = false;
             }
             _jointSamplerLocationCache.Clear();

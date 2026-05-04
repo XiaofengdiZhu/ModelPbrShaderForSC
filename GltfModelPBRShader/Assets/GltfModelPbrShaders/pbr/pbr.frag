@@ -36,10 +36,11 @@ precision highp float;
 out vec4 g_finalColor;
 
 #ifdef USE_INSTANCING
-in vec2 v_instanceLight;
+in vec3 v_instanceLight;
 #else
 uniform float u_TerrainLight;
 uniform float u_CelestialBody;
+uniform float u_IblStrength;
 #endif
 
 
@@ -171,78 +172,88 @@ void main()
 
     #if defined(USE_IBL) || defined(MATERIAL_TRANSMISSION)
 
-    f_diffuse = getDiffuseLight(n) * baseColor.rgb;
+    // Get IBL strength (instanced: from vertex attribute, non-instanced: from uniform)
+#ifdef USE_INSTANCING
+    float iblStrength = v_instanceLight.z;
+#else
+    float iblStrength = u_IblStrength;
+#endif
+
+    // Only compute IBL contribution if strength > 0
+    if (iblStrength > 0.0) {
+        f_diffuse = getDiffuseLight(n) * baseColor.rgb;
 
     #ifdef MATERIAL_DIFFUSE_TRANSMISSION
-    diffuseTransmissionIBL = getDiffuseLight(-n) * materialInfo.diffuseTransmissionColorFactor;
+        diffuseTransmissionIBL = getDiffuseLight(-n) * materialInfo.diffuseTransmissionColorFactor;
     #ifdef MATERIAL_VOLUME
-    diffuseTransmissionIBL = applyVolumeAttenuation(diffuseTransmissionIBL, diffuseTransmissionThickness, materialInfo.attenuationColor, materialInfo.attenuationDistance);
+        diffuseTransmissionIBL = applyVolumeAttenuation(diffuseTransmissionIBL, diffuseTransmissionThickness, materialInfo.attenuationColor, materialInfo.attenuationDistance);
     #endif
     #ifdef MATERIAL_VOLUME_SCATTER
-    diffuseTransmissionIBL *= (1.0 - singleScatter);
+        diffuseTransmissionIBL *= (1.0 - singleScatter);
     #endif
-    f_diffuse = mix(f_diffuse, diffuseTransmissionIBL, materialInfo.diffuseTransmissionFactor);
+        f_diffuse = mix(f_diffuse, diffuseTransmissionIBL, materialInfo.diffuseTransmissionFactor);
     #endif
 
 
     #if defined(MATERIAL_TRANSMISSION)
-    f_specular_transmission = getIBLVolumeRefraction(
-    n, v,
-    materialInfo.perceptualRoughness,
-    baseColor.rgb, v_Position, u_ModelMatrix, u_ViewMatrix, u_ProjectionMatrix,
-    materialInfo.ior, materialInfo.thickness, materialInfo.attenuationColor, materialInfo.attenuationDistance, materialInfo.dispersion);
-    f_diffuse = mix(f_diffuse, f_specular_transmission, materialInfo.transmissionFactor);
+        f_specular_transmission = getIBLVolumeRefraction(
+        n, v,
+        materialInfo.perceptualRoughness,
+        baseColor.rgb, v_Position, u_ModelMatrix, u_ViewMatrix, u_ProjectionMatrix,
+        materialInfo.ior, materialInfo.thickness, materialInfo.attenuationColor, materialInfo.attenuationDistance, materialInfo.dispersion);
+        f_diffuse = mix(f_diffuse, f_specular_transmission, materialInfo.transmissionFactor);
     #endif
 
     #ifdef MATERIAL_ANISOTROPY
-    f_specular_metal = getIBLRadianceAnisotropy(n, v, materialInfo.perceptualRoughness, materialInfo.anisotropyStrength, materialInfo.anisotropicB);
-    f_specular_dielectric = f_specular_metal;
+        f_specular_metal = getIBLRadianceAnisotropy(n, v, materialInfo.perceptualRoughness, materialInfo.anisotropyStrength, materialInfo.anisotropicB);
+        f_specular_dielectric = f_specular_metal;
     #else
-    f_specular_metal = getIBLRadianceGGX(n, v, materialInfo.perceptualRoughness);
-    f_specular_dielectric = f_specular_metal;
+        f_specular_metal = getIBLRadianceGGX(n, v, materialInfo.perceptualRoughness);
+        f_specular_dielectric = f_specular_metal;
     #endif
 
-    // Calculate fresnel mix for IBL  
+        // Calculate fresnel mix for IBL
 
-    vec3 f_metal_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, baseColor.rgb, 1.0);
-    f_metal_brdf_ibl = f_metal_fresnel_ibl * f_specular_metal;
+        vec3 f_metal_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, baseColor.rgb, 1.0);
+        f_metal_brdf_ibl = f_metal_fresnel_ibl * f_specular_metal;
 
-    vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
-    f_dielectric_brdf_ibl = mix(f_diffuse, f_specular_dielectric, f_dielectric_fresnel_ibl);
+        vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
+        f_dielectric_brdf_ibl = mix(f_diffuse, f_specular_dielectric, f_dielectric_fresnel_ibl);
 
     #ifdef MATERIAL_IRIDESCENCE
-    f_metal_brdf_ibl = mix(f_metal_brdf_ibl, f_specular_metal * iridescenceFresnel_metallic, materialInfo.iridescenceFactor);
-    f_dielectric_brdf_ibl = mix(f_dielectric_brdf_ibl, rgb_mix(f_diffuse, f_specular_dielectric, iridescenceFresnel_dielectric), materialInfo.iridescenceFactor);
+        f_metal_brdf_ibl = mix(f_metal_brdf_ibl, f_specular_metal * iridescenceFresnel_metallic, materialInfo.iridescenceFactor);
+        f_dielectric_brdf_ibl = mix(f_dielectric_brdf_ibl, rgb_mix(f_diffuse, f_specular_dielectric, iridescenceFresnel_dielectric), materialInfo.iridescenceFactor);
     #endif
 
 
     #ifdef MATERIAL_CLEARCOAT
-    clearcoat_brdf = getIBLRadianceGGX(materialInfo.clearcoatNormal, v, materialInfo.clearcoatRoughness);
+        clearcoat_brdf = getIBLRadianceGGX(materialInfo.clearcoatNormal, v, materialInfo.clearcoatRoughness);
     #endif
 
     #ifdef MATERIAL_SHEEN
-    f_sheen = getIBLRadianceCharlie(n, v, materialInfo.sheenRoughnessFactor, materialInfo.sheenColorFactor);
-    albedoSheenScaling = 1.0 - max3(materialInfo.sheenColorFactor) * albedoSheenScalingLUT(NdotV, materialInfo.sheenRoughnessFactor);
+        f_sheen = getIBLRadianceCharlie(n, v, materialInfo.sheenRoughnessFactor, materialInfo.sheenColorFactor);
+        albedoSheenScaling = 1.0 - max3(materialInfo.sheenColorFactor) * albedoSheenScalingLUT(NdotV, materialInfo.sheenRoughnessFactor);
     #endif
 
-    color = mix(f_dielectric_brdf_ibl, f_metal_brdf_ibl, materialInfo.metallic);
-    color = f_sheen + color * albedoSheenScaling;
-    color = mix(color, clearcoat_brdf, clearcoatFactor * clearcoatFresnel);
+        color = mix(f_dielectric_brdf_ibl, f_metal_brdf_ibl, materialInfo.metallic);
+        color = f_sheen + color * albedoSheenScaling;
+        color = mix(color, clearcoat_brdf, clearcoatFactor * clearcoatFresnel);
 
     #ifdef HAS_OCCLUSION_MAP
-    float ao = 1.0;
-    ao = texture(u_OcclusionSampler, getOcclusionUV()).r;
-    color = color * (1.0 + u_OcclusionStrength * (ao - 1.0));
+        float ao = 1.0;
+        ao = texture(u_OcclusionSampler, getOcclusionUV()).r;
+        color = color * (1.0 + u_OcclusionStrength * (ao - 1.0));
     #endif
 
-    #endif//end USE_IBL
-
-    // Scale IBL by terrain light (both instanced and non-instanced)
+        // Scale IBL by terrain light and IBL strength
 #ifdef USE_INSTANCING
-    color *= v_instanceLight.x;
+        color *= v_instanceLight.x * iblStrength;
 #else
-    color *= u_TerrainLight;
+        color *= u_TerrainLight * iblStrength;
 #endif
+    } // iblStrength > 0.0
+
+    #endif//end USE_IBL
 
     // Debug: raw IBL output (linear, no tone map, no punctual light)
     #if DEBUG == DEBUG_IBL_RAW
