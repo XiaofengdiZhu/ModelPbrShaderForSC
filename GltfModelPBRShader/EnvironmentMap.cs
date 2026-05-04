@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Engine.Graphics;
+using Engine.Media;
 using Vector3 = Engine.Vector3;
 
 namespace Game {
@@ -22,6 +24,46 @@ namespace Game {
             HdrHeader header = ParseHeader(reader);
             float[] data = ReadRleRgbe(reader, header.Width, header.Height);
             return new EnvironmentMap { Width = header.Width, Height = header.Height, DataFloat = data, Exposure = header.Exposure };
+        }
+
+        /// <summary>
+        /// 从 RenderTarget2D 创建 EnvironmentMap。
+        /// 将 RGBA 数据转换为 HDR float 格式。
+        /// </summary>
+        /// <param name="renderTarget">要读取的渲染目标，必须为 Rgba8888 格式</param>
+        /// <param name="exposure">曝光值，默认为 1.0</param>
+        /// <returns>新的 EnvironmentMap 实例</returns>
+        public static EnvironmentMap FromRenderTarget(RenderTarget2D renderTarget, float exposure = 1.0f) {
+            int width = renderTarget.Width;
+            int height = renderTarget.Height;
+
+            // 使用 RenderTarget2D.Save 获取 Image，然后访问 Pixels
+            // Image 类有 Dispose 方法但未实现 IDisposable，需手动释放
+            Image image = RenderTarget2D.Save(renderTarget);
+            try {
+                Engine.Color[] pixels = image.Pixels;
+
+                // 转换为 HDR float 格式（RGB，每像素 3 个 float）
+                float[] data = new float[width * height * 3];
+                float scale = exposure / 255f;
+                for (int i = 0; i < pixels.Length; i++) {
+                    int dstIdx = i * 3;
+                    // Color.R/G/B 返回 byte (0-255)，转换为 float 并应用曝光
+                    data[dstIdx] = pixels[i].R * scale;
+                    data[dstIdx + 1] = pixels[i].G * scale;
+                    data[dstIdx + 2] = pixels[i].B * scale;
+                }
+
+                return new EnvironmentMap {
+                    Width = width,
+                    Height = height,
+                    DataFloat = data,
+                    Exposure = exposure
+                };
+            }
+            finally {
+                image.Dispose();
+            }
         }
 
         #region HDR 文件解析

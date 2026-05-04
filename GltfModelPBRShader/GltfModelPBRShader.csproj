@@ -32,6 +32,10 @@
         </None>
     </ItemGroup>
     <ItemGroup>
+        <EmbeddedResource Include="Assets\Shaders\terrain_equirectangular.vert" />
+        <EmbeddedResource Include="Assets\Shaders\terrain_equirectangular.frag" />
+    </ItemGroup>
+    <ItemGroup>
         <Compile Include="*.cs" />
     </ItemGroup>
     <ItemGroup>
