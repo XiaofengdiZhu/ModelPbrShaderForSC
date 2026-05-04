@@ -21,12 +21,8 @@ namespace Game {
         bool _disposed;
         uint _framebuffer;
         uint _iblFilteringShader;
+        uint _iblVertShader;
         uint _iblFragShader;
-
-        uint _inputTexture;
-        uint _panoramaFragShader;
-        uint _panoramaToCubemapShader;
-        uint _panoramaVertShader;
 
         public uint LambertianTexture { get; private set; }
         public uint GGXTexture { get; private set; }
@@ -40,10 +36,6 @@ namespace Game {
                 return;
             }
             _disposed = true;
-            if (_inputTexture != 0) {
-                GLWrapper.GL.DeleteTexture(_inputTexture);
-                _inputTexture = 0;
-            }
             if (_cubemapTexture != 0) {
                 GLWrapper.GL.DeleteTexture(_cubemapTexture);
                 _cubemapTexture = 0;
@@ -72,21 +64,13 @@ namespace Game {
                 GLWrapper.GL.DeleteFramebuffer(_framebuffer);
                 _framebuffer = 0;
             }
-            if (_panoramaToCubemapShader != 0) {
-                GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
-                _panoramaToCubemapShader = 0;
-            }
             if (_iblFilteringShader != 0) {
                 GLWrapper.GL.DeleteProgram(_iblFilteringShader);
                 _iblFilteringShader = 0;
             }
-            if (_panoramaVertShader != 0) {
-                GLWrapper.GL.DeleteShader(_panoramaVertShader);
-                _panoramaVertShader = 0;
-            }
-            if (_panoramaFragShader != 0) {
-                GLWrapper.GL.DeleteShader(_panoramaFragShader);
-                _panoramaFragShader = 0;
+            if (_iblVertShader != 0) {
+                GLWrapper.GL.DeleteShader(_iblVertShader);
+                _iblVertShader = 0;
             }
             if (_iblFragShader != 0) {
                 GLWrapper.GL.DeleteShader(_iblFragShader);
@@ -95,68 +79,7 @@ namespace Game {
         }
 
         /// <summary>
-        /// 初始化并处理环境贴图
-        /// </summary>
-        public void Process(EnvironmentMap panorama) {
-            int[] viewport = new int[4];
-            GLWrapper.GL.GetInteger(GetPName.Viewport, viewport);
-            InitShaders();
-            CreateInputTexture(panorama);
-            CreateCubemapTextures();
-            _framebuffer = GLWrapper.GL.GenFramebuffer();
-            PanoramaToCubeMap();
-            CubeMapToLambertian();
-            CubeMapToGGX();
-            CubeMapToSheen();
-            GenerateGGXLut();
-            GenerateCharlieLut();
-
-            // 清理临时 GL 资源
-            GLWrapper.GL.DeleteTexture(_inputTexture);
-            _inputTexture = 0;
-            GLWrapper.GL.DeleteTexture(_cubemapTexture);
-            _cubemapTexture = 0;
-            GLWrapper.GL.DeleteFramebuffer(_framebuffer);
-            _framebuffer = 0;
-            GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
-            _panoramaToCubemapShader = 0;
-            GLWrapper.GL.DeleteProgram(_iblFilteringShader);
-            _iblFilteringShader = 0;
-            GLWrapper.GL.DeleteShader(_panoramaVertShader);
-            _panoramaVertShader = 0;
-            GLWrapper.GL.DeleteShader(_panoramaFragShader);
-            _panoramaFragShader = 0;
-            GLWrapper.GL.DeleteShader(_iblFragShader);
-            _iblFragShader = 0;
-
-            // 恢复 GL 状态
-            GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GLWrapper.GL.UseProgram(0);
-            GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
-            GLWrapper.GL.BindTexture(TextureTarget.Texture2D, 0);
-            GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, 0);
-            GLWrapper.GL.Viewport(viewport[0], viewport[1], (uint)viewport[2], (uint)viewport[3]);
-
-            // 重置 GLWrapper 缓存（绕过封装直接调用 GL 导致缓存不同步）
-            GLWrapper.m_program = -1;
-            GLWrapper.m_framebuffer = -1;
-            GLWrapper.m_lastShader = null;
-            GLWrapper.m_lastVertexDeclaration = null;
-            GLWrapper.m_lastVertexOffset = IntPtr.Zero;
-            GLWrapper.m_lastArrayBuffer = -1;
-            GLWrapper.m_texture2D = -1;
-            GLWrapper.m_activeTextureUnit = TextureUnit.Texture0;
-            for (int i = 0; i < GLWrapper.m_activeTexturesByUnit.Length; i++) {
-                GLWrapper.m_activeTexturesByUnit[i] = -1;
-            }
-            GLWrapper.m_viewport = null;
-            GLWrapper.m_rasterizerState = null;
-            GLWrapper.m_depthStencilState = null;
-            GLWrapper.m_blendState = null;
-        }
-
-        /// <summary>
-        /// 处理已有的 Cubemap 纹理（跳过 PanoramaToCubeMap 步骤）
+        /// 处理已有的 Cubemap 纹理
         /// </summary>
         /// <param name="cubemapTexture">GL cubemap 纹理句柄</param>
         /// <param name="size">Cubemap 每面分辨率</param>
@@ -185,14 +108,10 @@ namespace Game {
             // 清理临时 GL 资源
             GLWrapper.GL.DeleteFramebuffer(_framebuffer);
             _framebuffer = 0;
-            GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
-            _panoramaToCubemapShader = 0;
             GLWrapper.GL.DeleteProgram(_iblFilteringShader);
             _iblFilteringShader = 0;
-            GLWrapper.GL.DeleteShader(_panoramaVertShader);
-            _panoramaVertShader = 0;
-            GLWrapper.GL.DeleteShader(_panoramaFragShader);
-            _panoramaFragShader = 0;
+            GLWrapper.GL.DeleteShader(_iblVertShader);
+            _iblVertShader = 0;
             GLWrapper.GL.DeleteShader(_iblFragShader);
             _iblFragShader = 0;
 
@@ -227,13 +146,10 @@ namespace Game {
 
         void InitShaders() {
             string vertSource = LoadShaderSource("fullscreen.vert");
-            string panoramaFragSource = LoadShaderSource("panorama_to_cubemap.frag");
             string iblFragSource = LoadShaderSource("ibl_filtering.frag");
-            _panoramaVertShader = CompileShader(vertSource, true, "fullscreen.vert");
-            _panoramaFragShader = CompileShader(panoramaFragSource, false, "panorama_to_cubemap.frag");
+            _iblVertShader = CompileShader(vertSource, true, "fullscreen.vert");
             _iblFragShader = CompileShader(iblFragSource, false, "ibl_filtering.frag");
-            _panoramaToCubemapShader = LinkProgram(_panoramaVertShader, _panoramaFragShader);
-            _iblFilteringShader = LinkProgram(_panoramaVertShader, _iblFragShader);
+            _iblFilteringShader = LinkProgram(_iblVertShader, _iblFragShader);
         }
 
         string LoadShaderSource(string shaderName) {
@@ -288,37 +204,6 @@ namespace Game {
             return program;
         }
 
-        unsafe void CreateInputTexture(EnvironmentMap panorama) {
-            _inputTexture = GLWrapper.GL.GenTexture();
-            GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
-            GLWrapper.GL.BindTexture(TextureTarget.Texture2D, _inputTexture);
-            int numPixels = panorama.Width * panorama.Height;
-            float[] rgbaData = new float[numPixels * 4];
-            for (int i = 0; i < numPixels; i++) {
-                rgbaData[i * 4] = panorama.DataFloat[i * 3];
-                rgbaData[i * 4 + 1] = panorama.DataFloat[i * 3 + 1];
-                rgbaData[i * 4 + 2] = panorama.DataFloat[i * 3 + 2];
-                rgbaData[i * 4 + 3] = 1.0f;
-            }
-            fixed (float* d = rgbaData) {
-                GLWrapper.GL.TexImage2D(
-                    TextureTarget.Texture2D,
-                    0,
-                    InternalFormat.Rgba32f,
-                    (uint)panorama.Width,
-                    (uint)panorama.Height,
-                    0,
-                    PixelFormat.Rgba,
-                    PixelType.Float,
-                    d
-                );
-            }
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.MirroredRepeat);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.MirroredRepeat);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        }
-
         void CreateCubemapTextures() {
             _cubemapTexture = CreateCubemapTexture(true);
             LambertianTexture = CreateCubemapTexture(false);
@@ -361,32 +246,6 @@ namespace Game {
             GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
             GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
             return texture;
-        }
-
-        void PanoramaToCubeMap() {
-            GLWrapper.GL.UseProgram(_panoramaToCubemapShader);
-            int u_panoramaLoc = GLWrapper.GL.GetUniformLocation(_panoramaToCubemapShader, "u_panorama");
-            int u_currentFaceLoc = GLWrapper.GL.GetUniformLocation(_panoramaToCubemapShader, "u_currentFace");
-            for (int i = 0; i < 6; i++) {
-                GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
-                GLWrapper.GL.FramebufferTexture2D(
-                    FramebufferTarget.Framebuffer,
-                    FramebufferAttachment.ColorAttachment0,
-                    TextureTarget.TextureCubeMapPositiveX + i,
-                    _cubemapTexture,
-                    0
-                );
-                GLWrapper.GL.Viewport(0, 0, (uint)_textureSize, (uint)_textureSize);
-                GLWrapper.GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-                GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
-                GLWrapper.GL.BindTexture(TextureTarget.Texture2D, _inputTexture);
-                GLWrapper.GL.Uniform1(u_panoramaLoc, 0);
-                GLWrapper.GL.Uniform1(u_currentFaceLoc, i);
-                GLWrapper.GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-            }
-            GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, _cubemapTexture);
-            GLWrapper.GL.GenerateMipmap(TextureTarget.TextureCubeMap);
         }
 
         void CubeMapToLambertian() {

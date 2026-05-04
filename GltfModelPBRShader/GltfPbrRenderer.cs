@@ -81,15 +81,6 @@ namespace Game {
 
         public Dictionary<SubsystemModelsRenderer.ModelData, CelestialBodyCacheEntry> CelestialBodyCache { get; } = new();
 
-        public void LoadEnvironmentMap(Stream hdrStream) {
-            IblSampler?.Dispose();
-            IblSampler = new IblSampler();
-            EnvironmentMap envMap = EnvironmentMap.LoadHDR(hdrStream);
-            IblSampler.Process(envMap);
-            MipCount = IblSampler.MipCount;
-            envMap.Dispose();
-        }
-
         /// <summary>
         /// 初始化动态 IBL 系统
         /// </summary>
