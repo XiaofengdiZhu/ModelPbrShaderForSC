@@ -228,7 +228,10 @@ namespace Game {
             try {
                 // 设置渲染目标
                 Display.RenderTarget = _renderTarget;
-                Display.Clear(Color.Transparent, 1f, 0);
+
+                // 用天空雾色清除背景（作为天空底色）
+                Color skyColor = _subsystemSky?.ViewFogColor ?? Color.Transparent;
+                Display.Clear(skyColor, 1f, 0);
 
                 // 1. 捕获地形
                 CaptureTerrain(capturePosition, width, height);
