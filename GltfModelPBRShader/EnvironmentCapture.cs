@@ -41,6 +41,9 @@ namespace Game {
         const int AlphaTestMask = 0x20; // (1 << 5)
         const int TransparentMask = 0x40; // (1 << 6)
 
+        // 调试：捕获计数器
+        int _captureCount;
+
         bool _disposed;
 
         /// <summary>
@@ -240,7 +243,15 @@ namespace Game {
                 CaptureClouds(capturePosition, width, height);
 
                 // 3. 从渲染目标创建 EnvironmentMap
-                return EnvironmentMap.FromRenderTarget(_renderTarget, exposure);
+                EnvironmentMap envMap = EnvironmentMap.FromRenderTarget(_renderTarget, exposure);
+
+                // 调试：保存前三张环境贴图
+                if (_captureCount < 3) {
+                    SaveEnvironmentMap(_captureCount, capturePosition);
+                    _captureCount++;
+                }
+
+                return envMap;
             }
             finally {
                 // 恢复渲染目标
@@ -263,6 +274,27 @@ namespace Game {
         public RenderTarget2D GetOrCreateRenderTarget(int width, int height) {
             EnsureRenderTarget(width, height);
             return _renderTarget;
+        }
+
+        /// <summary>
+        /// 保存环境贴图到 exe 目录（调试用）
+        /// </summary>
+        void SaveEnvironmentMap(int index, Vector3 capturePosition) {
+            if (_renderTarget == null) return;
+
+            try {
+                string fileName = $"env_capture_{index}_{capturePosition.X:F0}_{capturePosition.Y:F0}_{capturePosition.Z:F0}.png";
+                string exePath = AppDomain.CurrentDomain.BaseDirectory;
+                string fullPath = Path.Combine(exePath, fileName);
+
+                using var stream = File.OpenWrite(fullPath);
+                RenderTarget2D.Save(_renderTarget, stream, Engine.Media.ImageFileFormat.Png, true);
+
+                Log.Information($"[glTF PBR Shader] Saved environment map: {fullPath}");
+            }
+            catch (Exception ex) {
+                Log.Warning($"[glTF PBR Shader] Failed to save environment map: {ex.Message}");
+            }
         }
 
         public void Dispose() {
