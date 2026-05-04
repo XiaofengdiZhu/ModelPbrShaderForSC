@@ -70,7 +70,7 @@ namespace Game {
         const float CaptureDistanceThreshold = 1.5f;      // 触发捕获的移动距离（米）
         const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
         const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
-        const int EnvironmentMapBaseWidth = 1024;          // 全景图基础宽度（降低以提升性能）
+        const int EnvironmentMapFaceSize = 256;             // Cubemap 每面分辨率
 
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
@@ -181,25 +181,22 @@ namespace Game {
             }
 
             try {
-                int width = EnvironmentMapBaseWidth;
-                int height = EnvironmentMapBaseWidth / 2;
+                int faceSize = EnvironmentMapFaceSize;
 
                 Log.Information($"[glTF PBR Shader] Capturing environment at {capturePosition}");
 
-                // 捕获环境贴图
-                EnvironmentMap envMap = _environmentCapture.CaptureEnvironment(capturePosition, width, height);
+                // 捕获环境贴图到 Cubemap
+                uint cubemapTexture = _environmentCapture.CaptureEnvironment(capturePosition, faceSize);
 
                 // 处理为 IBL 采样器
                 playerData.IblSampler?.Dispose();
                 playerData.IblSampler = new IblSampler();
-                playerData.IblSampler.Process(envMap);
+                playerData.IblSampler.Process(cubemapTexture, faceSize);
                 playerData.MipCount = playerData.IblSampler.MipCount;
 
                 // 更新捕获状态
                 playerData.LastCapturePosition = capturePosition;
                 playerData.LastCaptureTime = Time.FrameStartTime;
-
-                envMap.Dispose();
 
                 Log.Information($"[glTF PBR Shader] Environment capture complete, MipCount={playerData.MipCount}");
             }
