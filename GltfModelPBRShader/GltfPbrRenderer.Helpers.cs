@@ -68,6 +68,13 @@ namespace Game {
             if (celestialBodyVisibleLoc >= 0) {
                 GLWrapper.GL.Uniform1(celestialBodyVisibleLoc, GetCelestialBodyVisible(modelData) ? 1f : 0f);
             }
+            if (!_iblStrengthLocCache.TryGetValue(programHandle, out int iblStrengthLoc)) {
+                iblStrengthLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_IblStrength");
+                _iblStrengthLocCache[programHandle] = iblStrengthLoc;
+            }
+            if (iblStrengthLoc >= 0) {
+                GLWrapper.GL.Uniform1(iblStrengthLoc, IblSampler != null ? EnvironmentStrength : 0f);
+            }
             UpdateLightsUBO(modelData.Light);
         }
 

@@ -1,7 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
-using System.Text;
 using Engine;
 using Engine.Graphics;
 using Shader = Engine.Graphics.Shader;
@@ -27,10 +25,6 @@ namespace Game {
         int _renderTargetWidth;
         int _renderTargetHeight;
 
-        // 捕获相机
-        CaptureCamera _captureCamera;
-        GameWidget _gameWidget;
-
         // 子系统引用
         SubsystemTerrain _subsystemTerrain;
         SubsystemSky _subsystemSky;
@@ -41,9 +35,6 @@ namespace Game {
         const int AlphaTestMask = 0x20; // (1 << 5)
         const int TransparentMask = 0x40; // (1 << 6)
 
-        // 调试：捕获计数器
-        int _captureCount;
-
         bool _disposed;
 
         /// <summary>
@@ -51,33 +42,24 @@ namespace Game {
         /// </summary>
         /// <param name="subsystemTerrain">地形子系统</param>
         /// <param name="subsystemSky">天空子系统</param>
-        /// <param name="gameWidget">游戏 widget（用于创建 CaptureCamera）</param>
-        public void Initialize(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky, GameWidget gameWidget) {
+        public void Initialize(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky) {
             _subsystemTerrain = subsystemTerrain;
             _subsystemSky = subsystemSky;
-            _gameWidget = gameWidget;
             LoadShaders();
         }
 
         void LoadShaders() {
-            // 从嵌入式资源加载着色器源码
-            Assembly assembly = typeof(EnvironmentCapture).Assembly;
-            string vertResourceName = "GltfModelPBRShader.Assets.Shaders.terrain_equirectangular.vert";
-            string fragResourceName = "GltfModelPBRShader.Assets.Shaders.terrain_equirectangular.frag";
+            // 使用 ContentManager 加载着色器源码
+            string vertPath = Storage.CombinePaths("GltfModelPbrShaders", "terrain_equirectangular.vert");
+            string fragPath = Storage.CombinePaths("GltfModelPbrShaders", "terrain_equirectangular.frag");
 
-            using (Stream vertStream = assembly.GetManifestResourceStream(vertResourceName)) {
-                if (vertStream == null) {
-                    throw new InvalidOperationException($"Cannot find embedded resource: {vertResourceName}");
-                }
-                using StreamReader reader = new(vertStream, Encoding.UTF8);
+            using (Stream vertStream = ContentManager.GetStream(vertPath)) {
+                using StreamReader reader = new(vertStream);
                 _vertShaderSource = reader.ReadToEnd();
             }
 
-            using (Stream fragStream = assembly.GetManifestResourceStream(fragResourceName)) {
-                if (fragStream == null) {
-                    throw new InvalidOperationException($"Cannot find embedded resource: {fragResourceName}");
-                }
-                using StreamReader reader = new(fragStream, Encoding.UTF8);
+            using (Stream fragStream = ContentManager.GetStream(fragPath)) {
+                using StreamReader reader = new(fragStream);
                 _fragShaderSource = reader.ReadToEnd();
             }
 
@@ -115,14 +97,6 @@ namespace Game {
 
             TerrainRenderer renderer = _subsystemTerrain.TerrainRenderer;
 
-            // 创建或更新捕获相机
-            if (_captureCamera == null || _captureCamera.ViewPosition != capturePosition) {
-                _captureCamera = new CaptureCamera(_gameWidget, capturePosition);
-            }
-
-            // 准备区块（视锥剔除对于等距矩形投影无意义，但我们仍调用 PrepareForDrawing）
-            renderer.PrepareForDrawing(_captureCamera);
-
             // 设置通用 Uniform
             Vector3 fogColor = new(_subsystemSky.ViewFogColor);
             float fogDensity = _subsystemSky.ViewFogDensity;
@@ -134,25 +108,33 @@ namespace Game {
             // 设置透明测试阈值
             _terrainAlphaTestedShader.GetParameter("u_alphaThreshold")?.SetValue(0.5f);
 
-            // 渲染状态
+            // 渲染状态 - 启用深度测试处理遮挡
+            // 等距矩形投影反转顶点缠绕顺序，使用 CullClockwise 显示外表面
             Display.BlendState = BlendState.Opaque;
             Display.DepthStencilState = DepthStencilState.Default;
-            Display.RasterizerState = RasterizerState.CullCounterClockwise;
+            Display.RasterizerState = RasterizerState.CullClockwise;
 
-            // 渲染不透明地形（所有方向子集）
-            foreach (TerrainChunk chunk in renderer.m_chunksToDraw) {
+            // 直接迭代所有已分配的区块，跳过视锥体剔除
+            // 等距矩形投影需要渲染所有方向的区块
+            float visibilityRange = _subsystemSky.VisibilityRange;
+            float visibilityRangeSq = visibilityRange * visibilityRange;
+            Vector2 captureXZ = new(capturePosition.X, capturePosition.Z);
+
+            TerrainChunk[] allocatedChunks = _subsystemTerrain.Terrain.AllocatedChunks;
+            foreach (TerrainChunk chunk in allocatedChunks) {
+                // 距离剔除（与 TerrainRenderer.PrepareForDrawing 相同逻辑）
+                if (chunk.Buffers.Count == 0) continue;
+                if (Vector2.DistanceSquared(captureXZ, chunk.Center) > visibilityRangeSq) continue;
+
+                // 渲染不透明地形
                 DrawTerrainChunkWithShader(_terrainOpaqueShader, chunk, AllOpaqueMask);
-            }
 
-            // 渲染半透明测试地形（树叶等）
-            Display.BlendState = BlendState.Opaque;
-            foreach (TerrainChunk chunk in renderer.m_chunksToDraw) {
+                // 渲染半透明测试地形
+                Display.BlendState = BlendState.Opaque;
                 DrawTerrainChunkWithShader(_terrainAlphaTestedShader, chunk, AlphaTestMask);
-            }
 
-            // 渲染透明地形（水、玻璃）
-            Display.BlendState = BlendState.AlphaBlend;
-            foreach (TerrainChunk chunk in renderer.m_chunksToDraw) {
+                // 渲染透明地形
+                Display.BlendState = BlendState.AlphaBlend;
                 DrawTerrainChunkWithShader(_terrainTransparentShader, chunk, TransparentMask);
             }
         }
@@ -167,6 +149,8 @@ namespace Game {
         void DrawTerrainChunkWithShader(Shader shader, TerrainChunk chunk, int subsetsMask) {
             foreach (TerrainChunkGeometry.Buffer buffer in chunk.Buffers) {
                 shader.GetParameter("u_texture")?.SetValue(buffer.Texture);
+                // 使用 Clamp 模式，与 TerrainRenderer 保持一致
+                shader.GetParameter("u_samplerState")?.SetValue(SamplerState.PointClamp);
                 DrawTerrainChunkGeometrySubsets(shader, chunk, buffer, subsetsMask);
             }
         }
@@ -225,8 +209,11 @@ namespace Game {
             // 创建或复用渲染目标
             EnsureRenderTarget(width, height);
 
-            // 保存当前渲染目标
+            // 保存当前渲染状态
             RenderTarget2D previousRenderTarget = Display.RenderTarget;
+            BlendState previousBlendState = Display.BlendState;
+            DepthStencilState previousDepthStencilState = Display.DepthStencilState;
+            RasterizerState previousRasterizerState = Display.RasterizerState;
 
             try {
                 // 设置渲染目标
@@ -245,17 +232,14 @@ namespace Game {
                 // 3. 从渲染目标创建 EnvironmentMap
                 EnvironmentMap envMap = EnvironmentMap.FromRenderTarget(_renderTarget, exposure);
 
-                // 调试：保存前三张环境贴图
-                if (_captureCount < 3) {
-                    SaveEnvironmentMap(_captureCount, capturePosition);
-                    _captureCount++;
-                }
-
                 return envMap;
             }
             finally {
-                // 恢复渲染目标
+                // 恢复渲染状态
                 Display.RenderTarget = previousRenderTarget;
+                Display.BlendState = previousBlendState;
+                Display.DepthStencilState = previousDepthStencilState;
+                Display.RasterizerState = previousRasterizerState;
             }
         }
 
@@ -276,27 +260,6 @@ namespace Game {
             return _renderTarget;
         }
 
-        /// <summary>
-        /// 保存环境贴图到 exe 目录（调试用）
-        /// </summary>
-        void SaveEnvironmentMap(int index, Vector3 capturePosition) {
-            if (_renderTarget == null) return;
-
-            try {
-                string fileName = $"env_capture_{index}_{capturePosition.X:F0}_{capturePosition.Y:F0}_{capturePosition.Z:F0}.png";
-                string exePath = AppDomain.CurrentDomain.BaseDirectory;
-                string fullPath = Path.Combine(exePath, fileName);
-
-                using var stream = File.OpenWrite(fullPath);
-                RenderTarget2D.Save(_renderTarget, stream, Engine.Media.ImageFileFormat.Png, true);
-
-                Log.Information($"[glTF PBR Shader] Saved environment map: {fullPath}");
-            }
-            catch (Exception ex) {
-                Log.Warning($"[glTF PBR Shader] Failed to save environment map: {ex.Message}");
-            }
-        }
-
         public void Dispose() {
             if (_disposed) {
                 return;
@@ -314,9 +277,6 @@ namespace Game {
 
             _renderTarget?.Dispose();
             _renderTarget = null;
-
-            // CaptureCamera 不实现 IDisposable，无需释放
-            _captureCamera = null;
         }
     }
 }

@@ -36,6 +36,7 @@ namespace Game {
         protected const int JointTextureSlot = 31;
 
         protected readonly Dictionary<int, int> _celestialBodyVisibleLocCache = [];
+        protected readonly Dictionary<int, int> _iblStrengthLocCache = [];
         readonly HashSet<ComponentModel> _collectedLightModels = [];
         protected readonly Dictionary<int, int> _glymulLocationCache = [];
 

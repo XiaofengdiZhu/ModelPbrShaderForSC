@@ -70,8 +70,7 @@ namespace Game {
         const float CaptureDistanceThreshold = 1.5f;      // 触发捕获的移动距离（米）
         const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
         const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
-        const int EnvironmentMapBaseWidth = 512;          // 全景图基础宽度（降低以提升性能）
-        const float IblRangeBlocks = 16f;                 // IBL 启用范围（方块数）
+        const int EnvironmentMapBaseWidth = 1024;          // 全景图基础宽度（降低以提升性能）
 
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
@@ -96,10 +95,9 @@ namespace Game {
         /// </summary>
         /// <param name="subsystemTerrain">地形子系统</param>
         /// <param name="subsystemSky">天空子系统</param>
-        /// <param name="gameWidget">游戏 widget</param>
-        public void InitializeDynamicIbl(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky, GameWidget gameWidget) {
+        public void InitializeDynamicIbl(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky) {
             _environmentCapture = new EnvironmentCapture();
-            _environmentCapture.Initialize(subsystemTerrain, subsystemSky, gameWidget);
+            _environmentCapture.Initialize(subsystemTerrain, subsystemSky);
             DynamicIblEnabled = true;
             Log.Information("[glTF PBR Shader] Dynamic IBL initialized");
         }
@@ -114,7 +112,7 @@ namespace Game {
             int playerIndex = camera.GameWidget?.PlayerData?.PlayerIndex ?? 0;
             if (!PlayerEnvironments.TryGetValue(playerIndex, out PlayerEnvironmentData data)) {
                 data = new PlayerEnvironmentData {
-                    IblSampler = new IblSampler(),
+                    IblSampler = null, // 延迟到捕获时创建
                     LastCapturePosition = Vector3.Zero,
                     LastCaptureTime = 0,
                     CachedPlayerLight = 1f
@@ -144,10 +142,25 @@ namespace Game {
             float distanceMoved = Vector3.Distance(currentPosition, playerData.LastCapturePosition);
             double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
 
+            bool result;
             if (distanceMoved > CaptureDistanceThreshold) {
-                return timeSinceCapture > CaptureTimeThresholdNear;
+                result = timeSinceCapture > CaptureTimeThresholdNear;
             }
-            return timeSinceCapture > CaptureTimeThresholdFar;
+            else {
+                result = timeSinceCapture > CaptureTimeThresholdFar;
+            }
+
+            // 首次捕获（LastCaptureTime == 0）
+            if (playerData.LastCaptureTime == 0) {
+                // 检查地形是否已加载（至少有一个区块）
+                if (_subsystemTerrain?.Terrain?.AllocatedChunks?.Length == 0) {
+                    Log.Information("[glTF PBR Shader] Skipping first capture - terrain not loaded");
+                    return false;
+                }
+                result = true;
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -163,26 +176,36 @@ namespace Game {
         /// </summary>
         void CaptureEnvironment(PlayerEnvironmentData playerData, Vector3 capturePosition) {
             if (_environmentCapture == null) {
+                Log.Warning("[glTF PBR Shader] EnvironmentCapture is null, skipping capture");
                 return;
             }
 
-            int width = EnvironmentMapBaseWidth;
-            int height = EnvironmentMapBaseWidth / 2;
+            try {
+                int width = EnvironmentMapBaseWidth;
+                int height = EnvironmentMapBaseWidth / 2;
 
-            // 捕获环境贴图
-            EnvironmentMap envMap = _environmentCapture.CaptureEnvironment(capturePosition, width, height);
+                Log.Information($"[glTF PBR Shader] Capturing environment at {capturePosition}");
 
-            // 处理为 IBL 采样器
-            playerData.IblSampler?.Dispose();
-            playerData.IblSampler = new IblSampler();
-            playerData.IblSampler.Process(envMap);
-            playerData.MipCount = playerData.IblSampler.MipCount;
+                // 捕获环境贴图
+                EnvironmentMap envMap = _environmentCapture.CaptureEnvironment(capturePosition, width, height);
 
-            // 更新捕获状态
-            playerData.LastCapturePosition = capturePosition;
-            playerData.LastCaptureTime = Time.FrameStartTime;
+                // 处理为 IBL 采样器
+                playerData.IblSampler?.Dispose();
+                playerData.IblSampler = new IblSampler();
+                playerData.IblSampler.Process(envMap);
+                playerData.MipCount = playerData.IblSampler.MipCount;
 
-            envMap.Dispose();
+                // 更新捕获状态
+                playerData.LastCapturePosition = capturePosition;
+                playerData.LastCaptureTime = Time.FrameStartTime;
+
+                envMap.Dispose();
+
+                Log.Information($"[glTF PBR Shader] Environment capture complete, MipCount={playerData.MipCount}");
+            }
+            catch (Exception ex) {
+                Log.Error($"[glTF PBR Shader] Environment capture failed: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         static void AddShader(Dictionary<string, string> shaders, string basePath, string name) {
@@ -404,9 +427,11 @@ namespace Game {
                     CaptureEnvironment(_currentPlayerData, capturePosition);
                 }
 
-                // 使用当前玩家的 IBL 采样器
-                IblSampler = _currentPlayerData.IblSampler;
-                MipCount = _currentPlayerData.MipCount;
+                // 使用当前玩家的 IBL 采样器（如果已创建）
+                if (_currentPlayerData.IblSampler != null) {
+                    IblSampler = _currentPlayerData.IblSampler;
+                    MipCount = _currentPlayerData.MipCount;
+                }
             }
 
             base.BeginFrame(camera, allModels);
@@ -944,27 +969,10 @@ namespace Game {
 
         /// <summary>
         /// 计算 IBL 强度
-        /// 基于模型光照和玩家光照缓存计算 IBL 贡献强度
+        /// 基于模型光照计算 IBL 贡献强度
         /// </summary>
-        /// <param name="modelData">模型数据</param>
-        /// <param name="worldMatrix">世界变换矩阵</param>
-        /// <returns>IBL 强度 (0.0 - 1.0)</returns>
         float CalculateIblStrength(SubsystemModelsRenderer.ModelData modelData, Matrix4x4 worldMatrix) {
-            // 如果没有 IBL，返回 0
             if (IblSampler == null) {
-                return 0f;
-            }
-
-            // 获取模型世界位置
-            Vector3 modelPosition = worldMatrix.Translation;
-
-            // 计算到相机的距离平方
-            Vector3 cameraPosition = _camera.ViewPosition;
-            float distanceSquared = Vector3.DistanceSquared(modelPosition, cameraPosition);
-
-            // IBL 有效范围
-            float iblRangeSquared = IblRangeBlocks * IblRangeBlocks;
-            if (distanceSquared > iblRangeSquared) {
                 return 0f;
             }
 
@@ -978,8 +986,9 @@ namespace Game {
             float iblStrength;
             if (DynamicIblEnabled && _currentPlayerData != null) {
                 float playerLight = _currentPlayerData.CachedPlayerLight;
+                // 如果玩家光照无效，使用默认值
                 if (playerLight <= 0f) {
-                    return 0f;
+                    playerLight = 1f;
                 }
 
                 // IBL 强度比值，开方以软化对比度
@@ -987,15 +996,11 @@ namespace Game {
                 iblStrength = MathF.Sqrt(Math.Min(ratio, 1f));
             }
             else {
-                // 静态 IBL：使用模型光照
-                iblStrength = modelLight;
+                // 静态 IBL：使用 EnvironmentStrength
+                iblStrength = EnvironmentStrength;
             }
 
-            // 距离衰减
-            float distanceFactor = 1f - (distanceSquared / iblRangeSquared);
-
-            // 最终 IBL 强度
-            return iblStrength * distanceFactor;
+            return iblStrength;
         }
 
         #endregion

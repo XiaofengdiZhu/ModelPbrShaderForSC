@@ -137,17 +137,22 @@ namespace Game {
             GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, 0);
             GLWrapper.GL.Viewport(viewport[0], viewport[1], (uint)viewport[2], (uint)viewport[3]);
 
-            // 重置 GLWrapper 内部缓存，强制后续渲染重新设置 GL 状态
-            // IblSampler 通过 GLWrapper.GL 直接调用绕过了 GLWrapper 的缓存，
-            // 导致缓存与实际 GL 状态不同步，必须在此处重置
-            // 注意：引擎 API 未暴露 InvalidateCachedState() 方法，只能直接写字段。
-            // 引擎新增缓存字段时需同步更新此处。
+            // 重置 GLWrapper 缓存（绕过封装直接调用 GL 导致缓存不同步）
             GLWrapper.m_program = -1;
             GLWrapper.m_framebuffer = -1;
             GLWrapper.m_lastShader = null;
             GLWrapper.m_lastVertexDeclaration = null;
             GLWrapper.m_lastVertexOffset = IntPtr.Zero;
             GLWrapper.m_lastArrayBuffer = -1;
+            GLWrapper.m_texture2D = -1;
+            GLWrapper.m_activeTextureUnit = TextureUnit.Texture0;
+            for (int i = 0; i < GLWrapper.m_activeTexturesByUnit.Length; i++) {
+                GLWrapper.m_activeTexturesByUnit[i] = -1;
+            }
+            GLWrapper.m_viewport = null;
+            GLWrapper.m_rasterizerState = null;
+            GLWrapper.m_depthStencilState = null;
+            GLWrapper.m_blendState = null;
         }
 
         void InitShaders() {

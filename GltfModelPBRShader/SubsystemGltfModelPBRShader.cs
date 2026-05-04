@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Engine;
 using Engine.Graphics;
 using GameEntitySystem;
@@ -10,7 +11,6 @@ namespace Game {
         public SubsystemTerrain _subsystemTerrain;
         public SubsystemSky _subsystemSky;
         public SubsystemPlayers _subsystemPlayers;
-        public SubsystemGameWidgets _subsystemGameWidgets;
         public static GltfPbrRenderer PbrRenderer { get; private set; }
 
         public override void Load(ValuesDictionary valuesDictionary) {
@@ -19,13 +19,12 @@ namespace Game {
             _subsystemTerrain = Project.FindSubsystem<SubsystemTerrain>();
             _subsystemSky = Project.FindSubsystem<SubsystemSky>();
             _subsystemPlayers = Project.FindSubsystem<SubsystemPlayers>();
-            _subsystemGameWidgets = Project.FindSubsystem<SubsystemGameWidgets>();
 
             if (PbrRenderer == null) {
                 Model.LoadTexturesInSrgb = true;
                 try {
                     PbrRenderer = new GltfPbrRenderer();
-                    Log.Information("[glTF PBR Shader] Dynamic IBL mode enabled.");
+                    PbrRenderer.EnvironmentStrength = 1.0f;
                     Log.Information("[glTF PBR Shader] PBR renderer initialized successfully.");
                 }
                 catch (Exception ex) {
@@ -40,12 +39,7 @@ namespace Game {
 
                 // 初始化动态 IBL
                 if (_subsystemTerrain != null && _subsystemSky != null) {
-                    GameWidget gameWidget = _subsystemGameWidgets?.GameWidgets.Count > 0
-                        ? _subsystemGameWidgets.GameWidgets[0]
-                        : null;
-                    if (gameWidget != null) {
-                        PbrRenderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky, gameWidget);
-                    }
+                    PbrRenderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky);
                 }
             }
 
