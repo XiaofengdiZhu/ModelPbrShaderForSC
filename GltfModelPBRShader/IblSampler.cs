@@ -16,7 +16,7 @@ namespace Game {
         readonly int _lowestMipLevel = 4;
         readonly int _lutResolution = 1024;
         readonly int _sheenSampleCount = 64;
-        readonly int _textureSize = 256;
+        int _textureSize = 256;
         uint _cubemapTexture;
         bool _disposed;
         uint _framebuffer;
@@ -153,6 +153,76 @@ namespace Game {
             GLWrapper.m_rasterizerState = null;
             GLWrapper.m_depthStencilState = null;
             GLWrapper.m_blendState = null;
+        }
+
+        /// <summary>
+        /// 处理已有的 Cubemap 纹理（跳过 PanoramaToCubeMap 步骤）
+        /// </summary>
+        /// <param name="cubemapTexture">GL cubemap 纹理句柄</param>
+        /// <param name="size">Cubemap 每面分辨率</param>
+        public void Process(uint cubemapTexture, int size) {
+            int[] viewport = new int[4];
+            GLWrapper.GL.GetInteger(GetPName.Viewport, viewport);
+
+            InitShaders();
+
+            // 直接使用输入的 cubemap，不需要创建和转换
+            _cubemapTexture = cubemapTexture;
+            _textureSize = size;
+            MipCount = _lowestMipLevel;
+
+            // 创建输出纹理
+            CreateCubemapTextures();
+            _framebuffer = GLWrapper.GL.GenFramebuffer();
+
+            // 直接进行 IBL 预过滤
+            CubeMapToLambertian();
+            CubeMapToGGX();
+            CubeMapToSheen();
+            GenerateGGXLut();
+            GenerateCharlieLut();
+
+            // 清理临时 GL 资源
+            GLWrapper.GL.DeleteFramebuffer(_framebuffer);
+            _framebuffer = 0;
+            GLWrapper.GL.DeleteProgram(_panoramaToCubemapShader);
+            _panoramaToCubemapShader = 0;
+            GLWrapper.GL.DeleteProgram(_iblFilteringShader);
+            _iblFilteringShader = 0;
+            GLWrapper.GL.DeleteShader(_panoramaVertShader);
+            _panoramaVertShader = 0;
+            GLWrapper.GL.DeleteShader(_panoramaFragShader);
+            _panoramaFragShader = 0;
+            GLWrapper.GL.DeleteShader(_iblFragShader);
+            _iblFragShader = 0;
+
+            // 恢复 GL 状态
+            GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GLWrapper.GL.UseProgram(0);
+            GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
+            GLWrapper.GL.BindTexture(TextureTarget.Texture2D, 0);
+            GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, 0);
+            GLWrapper.GL.Viewport(viewport[0], viewport[1], (uint)viewport[2], (uint)viewport[3]);
+
+            // 重置 GLWrapper 缓存
+            GLWrapper.m_program = -1;
+            GLWrapper.m_framebuffer = -1;
+            GLWrapper.m_lastShader = null;
+            GLWrapper.m_lastVertexDeclaration = null;
+            GLWrapper.m_lastVertexOffset = IntPtr.Zero;
+            GLWrapper.m_lastArrayBuffer = -1;
+            GLWrapper.m_texture2D = -1;
+            GLWrapper.m_activeTextureUnit = TextureUnit.Texture0;
+            for (int i = 0; i < GLWrapper.m_activeTexturesByUnit.Length; i++) {
+                GLWrapper.m_activeTexturesByUnit[i] = -1;
+            }
+            GLWrapper.m_viewport = null;
+            GLWrapper.m_rasterizerState = null;
+            GLWrapper.m_depthStencilState = null;
+            GLWrapper.m_blendState = null;
+
+            // 不删除输入的 cubemap，它由 EnvironmentCapture 管理
+            _cubemapTexture = 0;
         }
 
         void InitShaders() {
