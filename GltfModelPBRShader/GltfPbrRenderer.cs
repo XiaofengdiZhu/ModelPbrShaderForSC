@@ -165,7 +165,7 @@ namespace Game {
         /// <summary>
         /// 执行环境贴图捕获
         /// </summary>
-        void CaptureEnvironment(PlayerEnvironmentData playerData, Vector3 capturePosition) {
+        void CaptureEnvironment(Camera camera, PlayerEnvironmentData playerData, Vector3 capturePosition) {
             if (_environmentCapture == null) {
                 Log.Warning("[glTF PBR Shader] EnvironmentCapture is null, skipping capture");
                 return;
@@ -177,7 +177,7 @@ namespace Game {
                 Log.Information($"[glTF PBR Shader] Capturing environment at {capturePosition}");
 
                 // 捕获环境贴图到 Cubemap
-                uint cubemapTexture = _environmentCapture.CaptureEnvironment(capturePosition, faceSize);
+                uint cubemapTexture = _environmentCapture.CaptureEnvironment(camera.GameWidget, capturePosition, faceSize);
 
                 // 处理为 IBL 采样器
                 playerData.IblSampler?.Dispose();
@@ -223,7 +223,6 @@ namespace Game {
             AddShader(shaders, basePath, "specular_glossiness.frag");
             AddShader(shaders, basePath, "scatter.frag");
             AddShader(shaders, "GltfModelPbrShaders/", "fullscreen.vert");
-            AddShader(shaders, "GltfModelPbrShaders/", "panorama_to_cubemap.frag");
             AddShader(shaders, "GltfModelPbrShaders/", "ibl_filtering.frag");
             ShaderCache.LoadShaderSources(shaders, basePath);
             AnimationPlayer.MorphWeightAnimationEnabled = true;
@@ -412,7 +411,7 @@ namespace Game {
 
                 // 检查是否需要捕获环境贴图
                 if (ShouldCapture(_currentPlayerData, capturePosition)) {
-                    CaptureEnvironment(_currentPlayerData, capturePosition);
+                    CaptureEnvironment(camera, _currentPlayerData, capturePosition);
                 }
 
                 // 使用当前玩家的 IBL 采样器（如果已创建）

@@ -59,6 +59,10 @@
         <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\Silk.NET.Core.dll</HintPath>
           <Private>false</Private>
       </Reference>
+      <Reference Include="SixLabors.ImageSharp">
+        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\SixLabors.ImageSharp.dll</HintPath>
+          <Private>false</Private>
+      </Reference>
     </ItemGroup>
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">
         <PropertyGroup>

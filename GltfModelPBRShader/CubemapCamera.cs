@@ -4,7 +4,7 @@ using Engine.Graphics;
 namespace Game {
     /// <summary>
     /// 用于 Cubemap 捕获的简化相机
-    /// 不依赖 GameWidget，直接设置视图和投影矩阵
+    /// 使用传入的 GameWidget，直接设置视图和投影矩阵
     /// </summary>
     public class CubemapCamera : Camera {
         Matrix _viewMatrix;
@@ -32,7 +32,7 @@ namespace Game {
         public override bool UsesMovementControls => false;
         public override bool IsEntityControlEnabled => false;
 
-        public CubemapCamera() : base(null) {
+        public CubemapCamera(GameWidget gameWidget) : base(gameWidget) {
             ViewportSize = new Vector2(256, 256);
         }
 
