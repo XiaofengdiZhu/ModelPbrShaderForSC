@@ -177,7 +177,7 @@ namespace Game {
                 Log.Information($"[glTF PBR Shader] Capturing environment at {capturePosition}");
 
                 // 捕获环境贴图到 Cubemap
-                uint cubemapTexture = _environmentCapture.CaptureEnvironment(camera.GameWidget, capturePosition, faceSize);
+                CubemapTexture cubemapTexture = _environmentCapture.CaptureEnvironment(camera.GameWidget, capturePosition, faceSize);
 
                 // 处理为 IBL 采样器
                 playerData.IblSampler?.Dispose();

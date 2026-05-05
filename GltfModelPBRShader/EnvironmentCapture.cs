@@ -6,9 +6,7 @@ using Silk.NET.OpenGLES;
 
 namespace Game {
     public class EnvironmentCapture : IDisposable {
-        uint _cubemapTexture;
-        uint _depthBuffer;
-        uint _framebuffer;
+        CubemapRenderTarget _cubemapRenderTarget;
         int _faceSize;
 
         CubemapCamera _camera;
@@ -17,7 +15,6 @@ namespace Game {
         SubsystemTerrain _subsystemTerrain;
 
         bool _disposed;
-        int _captureCount;
 
         static readonly (Vector3 Target, Vector3 Up)[] CubemapFaces = [
             (Vector3.UnitX, Vector3.UnitY),
@@ -34,8 +31,8 @@ namespace Game {
             _terrainRenderer = subsystemTerrain.TerrainRenderer;
         }
 
-        public uint CaptureEnvironment(GameWidget gameWidget, Vector3 capturePosition, int faceSize) {
-            if (_terrainRenderer == null) return 0;
+        public CubemapTexture CaptureEnvironment(GameWidget gameWidget, Vector3 capturePosition, int faceSize) {
+            if (_terrainRenderer == null) return null;
 
             _camera ??= new CubemapCamera(gameWidget);
             _camera.GameWidget = gameWidget;
@@ -44,126 +41,78 @@ namespace Game {
 
             Viewport previousViewport = Display.Viewport;
             RenderTarget2D previousRenderTarget = Display.RenderTarget;
+            int savedMainFramebuffer = GLWrapper.m_mainFramebuffer;
 
             float farPlane = _subsystemSky.VisibilityRange;
 
             try {
+                GLWrapper.m_mainFramebuffer = _cubemapRenderTarget.m_frameBuffer;
+                Display.RenderTarget = null;
+
+                // ApplyViewportScissor Y-flips when RenderTarget==null:
+                //   y = BackbufferSize.Y - viewport.Y - viewport.Height
+                // Compensate: set Y = BackbufferSize.Y - faceSize, so after flip: y = 0
+                int compensateY = Display.BackbufferSize.Y - faceSize;
+                Viewport cubemapViewport = new Viewport(0, compensateY, faceSize, faceSize);
+                Rectangle cubemapScissor = new Rectangle(0, compensateY, faceSize, faceSize);
+
                 for (int face = 0; face < 6; face++) {
-                    GLWrapper.BindFramebuffer((int)_framebuffer);
-                    GLWrapper.GL.FramebufferTexture2D(
-                        FramebufferTarget.Framebuffer,
-                        FramebufferAttachment.ColorAttachment0,
-                        TextureTarget.TextureCubeMapPositiveX + face,
-                        _cubemapTexture,
-                        0
-                    );
-                    GLWrapper.GL.FramebufferRenderbuffer(
-                        FramebufferTarget.Framebuffer,
-                        FramebufferAttachment.DepthAttachment,
-                        RenderbufferTarget.Renderbuffer,
-                        _depthBuffer
-                    );
+                    _cubemapRenderTarget.BindFace(face);
+                    GLWrapper.m_framebuffer = -1;
 
-                    GLWrapper.GL.Viewport(0, 0, (uint)faceSize, (uint)faceSize);
+                    Display.Viewport = cubemapViewport;
+                    Display.ScissorRectangle = cubemapScissor;
 
-                    Color skyColor = _subsystemSky?.ViewFogColor ?? Color.Transparent;
-                    GLWrapper.ClearColor(new Vector4(
-                        skyColor.R / 255f,
-                        skyColor.G / 255f,
-                        skyColor.B / 255f,
-                        1f
-                    ));
+                    GLWrapper.ClearColor(new Vector4(_subsystemSky.ViewFogColor));
                     GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
                     var (target, up) = CubemapFaces[face];
                     _camera.SetupForCubemapFace(capturePosition, target, up, farPlane);
 
-                    if (_captureCount < 3) {
-                        Log.Information(string.Format("[glTF PBR Shader] Face {0} ({1}): pos={2}, target={3}, up={4}, viewDir={5}",
-                            face, FaceNames[face], capturePosition, target, up, _camera.ViewDirection));
-                    }
-
                     _terrainRenderer.PrepareForDrawing(_camera);
+
                     _terrainRenderer.DrawOpaque(_camera);
                     _terrainRenderer.DrawAlphaTested(_camera);
                     _terrainRenderer.DrawTransparent(_camera);
                 }
 
-                GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, _cubemapTexture);
-                GLWrapper.GL.GenerateMipmap(TextureTarget.TextureCubeMap);
-
-                // if (_captureCount++ <= 3) {
-                //     SaveCubemapToFiles(faceSize, _captureCount);
-                // }
-                _captureCount++;
+                _cubemapRenderTarget.GenerateMipMaps();
             }
             finally {
-                Display.Viewport = previousViewport;
+                GLWrapper.m_mainFramebuffer = savedMainFramebuffer;
                 Display.RenderTarget = previousRenderTarget;
+                Display.Viewport = previousViewport;
 
                 GLWrapper.m_program = -1;
                 GLWrapper.m_framebuffer = -1;
                 GLWrapper.m_lastShader = null;
                 GLWrapper.m_texture2D = -1;
                 GLWrapper.m_viewport = null;
+                GLWrapper.m_rasterizerState = null;
             }
 
-            return _cubemapTexture;
+            return _cubemapRenderTarget;
         }
 
-        unsafe void EnsureCubemapResources(int faceSize) {
-            if (_cubemapTexture != 0 && _faceSize == faceSize) return;
+        void EnsureCubemapResources(int faceSize) {
+            if (_cubemapRenderTarget != null && _faceSize == faceSize) return;
 
-            if (_cubemapTexture != 0) {
-                GLWrapper.DeleteTexture((int)_cubemapTexture);
-                GLWrapper.GL.DeleteRenderbuffer(_depthBuffer);
-                GLWrapper.DeleteFramebuffer((int)_framebuffer);
-            }
-
+            _cubemapRenderTarget?.Dispose();
             _faceSize = faceSize;
 
-            _cubemapTexture = GLWrapper.GL.GenTexture();
-            GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, _cubemapTexture);
-            for (int i = 0; i < 6; i++) {
-                GLWrapper.GL.TexImage2D(
-                    TextureTarget.TextureCubeMapPositiveX + i,
-                    0,
-                    InternalFormat.Rgba16f,
-                    (uint)faceSize,
-                    (uint)faceSize,
-                    0,
-                    PixelFormat.Rgba,
-                    PixelType.HalfFloat,
-                    null
-                );
-            }
-            GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-            GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-            GLWrapper.GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-
-            _depthBuffer = GLWrapper.GL.GenRenderbuffer();
-            GLWrapper.GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _depthBuffer);
-            GLWrapper.GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.DepthComponent24, (uint)faceSize, (uint)faceSize);
-
-            _framebuffer = GLWrapper.GL.GenFramebuffer();
+            _cubemapRenderTarget = new CubemapRenderTarget(faceSize, 1, ColorFormat.Rgba16f, DepthFormat.Depth24Stencil8);
+            _cubemapRenderTarget.SetFilterMode(true);
+            _cubemapRenderTarget.SetWrapMode(TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge);
         }
 
         static readonly string[] FaceNames = ["posX", "negX", "posY", "negY", "posZ", "negZ"];
 
-        unsafe void SaveCubemapToFiles(int faceSize, int captureCount) {
+        public unsafe void SaveCubemapToFiles(int faceSize, int captureCount) {
             try {
                 string outputDir = RunPath.GetOperatingPath();
 
                 for (int face = 0; face < 6; face++) {
-                    GLWrapper.BindFramebuffer((int)_framebuffer);
-                    GLWrapper.GL.FramebufferTexture2D(
-                        FramebufferTarget.Framebuffer,
-                        FramebufferAttachment.ColorAttachment0,
-                        TextureTarget.TextureCubeMapPositiveX + face,
-                        _cubemapTexture,
-                        0
-                    );
+                    _cubemapRenderTarget.BindFace(face);
 
                     Half[] halfPixels = new Half[faceSize * faceSize * 4];
                     fixed (Half* ptr = halfPixels) {
@@ -205,18 +154,8 @@ namespace Game {
             if (_disposed) return;
             _disposed = true;
 
-            if (_cubemapTexture != 0) {
-                GLWrapper.DeleteTexture((int)_cubemapTexture);
-                _cubemapTexture = 0;
-            }
-            if (_depthBuffer != 0) {
-                GLWrapper.GL.DeleteRenderbuffer(_depthBuffer);
-                _depthBuffer = 0;
-            }
-            if (_framebuffer != 0) {
-                GLWrapper.DeleteFramebuffer((int)_framebuffer);
-                _framebuffer = 0;
-            }
+            _cubemapRenderTarget?.Dispose();
+            _cubemapRenderTarget = null;
         }
     }
 }
