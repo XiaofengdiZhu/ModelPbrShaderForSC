@@ -38,35 +38,35 @@ namespace Game {
             }
             _disposed = true;
             if (_cubemapTexture != 0) {
-                GLWrapper.GL.DeleteTexture(_cubemapTexture);
+                GLWrapper.DeleteTexture((int)_cubemapTexture);
                 _cubemapTexture = 0;
             }
             if (LambertianTexture != 0) {
-                GLWrapper.GL.DeleteTexture(LambertianTexture);
+                GLWrapper.DeleteTexture((int)LambertianTexture);
                 LambertianTexture = 0;
             }
             if (GGXTexture != 0) {
-                GLWrapper.GL.DeleteTexture(GGXTexture);
+                GLWrapper.DeleteTexture((int)GGXTexture);
                 GGXTexture = 0;
             }
             if (SheenTexture != 0) {
-                GLWrapper.GL.DeleteTexture(SheenTexture);
+                GLWrapper.DeleteTexture((int)SheenTexture);
                 SheenTexture = 0;
             }
             if (GGXLut != 0) {
-                GLWrapper.GL.DeleteTexture(GGXLut);
+                GLWrapper.DeleteTexture((int)GGXLut);
                 GGXLut = 0;
             }
             if (CharlieLut != 0) {
-                GLWrapper.GL.DeleteTexture(CharlieLut);
+                GLWrapper.DeleteTexture((int)CharlieLut);
                 CharlieLut = 0;
             }
             if (_framebuffer != 0) {
-                GLWrapper.GL.DeleteFramebuffer(_framebuffer);
+                GLWrapper.DeleteFramebuffer((int)_framebuffer);
                 _framebuffer = 0;
             }
             if (_iblFilteringShader != 0) {
-                GLWrapper.GL.DeleteProgram(_iblFilteringShader);
+                GLWrapper.DeleteProgram((int)_iblFilteringShader);
                 _iblFilteringShader = 0;
             }
             if (_iblVertShader != 0) {
@@ -85,7 +85,7 @@ namespace Game {
 
             InitShaders();
 
-            GLWrapper.GL.Disable(EnableCap.CullFace);
+            GLWrapper.Disable(EnableCap.CullFace);
 
             _cubemapTexture = cubemapTexture;
             _textureSize = size;
@@ -112,20 +112,20 @@ namespace Game {
             // }
             _processCount++;
 
-            GLWrapper.GL.DeleteFramebuffer(_framebuffer);
+            GLWrapper.DeleteFramebuffer((int)_framebuffer);
             _framebuffer = 0;
-            GLWrapper.GL.DeleteProgram(_iblFilteringShader);
+            GLWrapper.DeleteProgram((int)_iblFilteringShader);
             _iblFilteringShader = 0;
             GLWrapper.GL.DeleteShader(_iblVertShader);
             _iblVertShader = 0;
             GLWrapper.GL.DeleteShader(_iblFragShader);
             _iblFragShader = 0;
 
-            GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GLWrapper.GL.UseProgram(0);
-            GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
-            GLWrapper.GL.BindTexture(TextureTarget.Texture2D, 0);
-            GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, 0);
+            GLWrapper.BindFramebuffer(0);
+            GLWrapper.UseProgram(0);
+            GLWrapper.ActiveTexture(TextureUnit.Texture0);
+            GLWrapper.BindTexture(TextureTarget.Texture2D, 0, true);
+            GLWrapper.BindTexture(TextureTarget.TextureCubeMap, 0, true);
             GLWrapper.GL.Viewport(viewport[0], viewport[1], (uint)viewport[2], (uint)viewport[3]);
 
             GLWrapper.m_program = -1;
@@ -144,7 +144,7 @@ namespace Game {
             GLWrapper.m_depthStencilState = null;
             GLWrapper.m_blendState = null;
 
-            GLWrapper.GL.Enable(EnableCap.CullFace);
+            GLWrapper.Enable(EnableCap.CullFace);
 
             _cubemapTexture = 0;
         }
@@ -174,7 +174,7 @@ namespace Game {
             if (status == 0) {
                 string log = GLWrapper.GL.GetShaderInfoLog(shader);
                 GLWrapper.GL.DeleteShader(shader);
-                throw new InvalidOperationException($"Shader compilation failed ({name}): {log}");
+                throw new InvalidOperationException(string.Format("Shader compilation failed ({0}): {1}", name, log));
             }
             return shader;
         }
@@ -202,7 +202,7 @@ namespace Game {
             if (status == 0) {
                 string log = GLWrapper.GL.GetProgramInfoLog(program);
                 GLWrapper.GL.DeleteProgram(program);
-                throw new InvalidOperationException($"Program link failed: {log}");
+                throw new InvalidOperationException(string.Format("Program link failed: {0}", log));
             }
             return program;
         }
@@ -272,7 +272,7 @@ namespace Game {
         }
 
         void ApplyFilter(int distribution, float roughness, int targetMipLevel, uint targetTexture, int sampleCount) {
-            GLWrapper.GL.UseProgram(_iblFilteringShader);
+            GLWrapper.UseProgram((int)_iblFilteringShader);
             int u_cubemapTextureLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_cubemapTexture");
             int u_roughnessLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_roughness");
             int u_sampleCountLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_sampleCount");
@@ -286,7 +286,7 @@ namespace Game {
             int currentTextureSize = _textureSize >> targetMipLevel;
             currentTextureSize = Math.Max(1, currentTextureSize);
             for (int i = 0; i < 6; i++) {
-                GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+                GLWrapper.BindFramebuffer((int)_framebuffer);
                 GLWrapper.GL.FramebufferTexture2D(
                     FramebufferTarget.Framebuffer,
                     FramebufferAttachment.ColorAttachment0,
@@ -295,9 +295,9 @@ namespace Game {
                     targetMipLevel
                 );
                 GLWrapper.GL.Viewport(0, 0, (uint)currentTextureSize, (uint)currentTextureSize);
-                GLWrapper.GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                GLWrapper.ClearColor(new Engine.Vector4(0.0f, 0.0f, 0.0f, 1.0f));
                 GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-                GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
+                GLWrapper.ActiveTexture(TextureUnit.Texture0);
                 GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, _cubemapTexture);
                 GLWrapper.GL.Uniform1(u_cubemapTextureLoc, 0);
                 GLWrapper.GL.Uniform1(u_roughnessLoc, roughness);
@@ -345,7 +345,7 @@ namespace Game {
         }
 
         void SampleLut(int distribution, uint targetTexture) {
-            GLWrapper.GL.UseProgram(_iblFilteringShader);
+            GLWrapper.UseProgram((int)_iblFilteringShader);
             int u_cubemapTextureLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_cubemapTexture");
             int u_roughnessLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_roughness");
             int u_sampleCountLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_sampleCount");
@@ -356,7 +356,7 @@ namespace Game {
             int u_isGeneratingLUTLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_isGeneratingLUT");
             int u_floatTextureLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_floatTexture");
             int u_intensityScaleLoc = GLWrapper.GL.GetUniformLocation(_iblFilteringShader, "u_intensityScale");
-            GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+            GLWrapper.BindFramebuffer((int)_framebuffer);
             GLWrapper.GL.FramebufferTexture2D(
                 FramebufferTarget.Framebuffer,
                 FramebufferAttachment.ColorAttachment0,
@@ -365,9 +365,9 @@ namespace Game {
                 0
             );
             GLWrapper.GL.Viewport(0, 0, (uint)_lutResolution, (uint)_lutResolution);
-            GLWrapper.GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            GLWrapper.ClearColor(new Engine.Vector4(0.0f, 0.0f, 0.0f, 1.0f));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-            GLWrapper.GL.ActiveTexture(TextureUnit.Texture0);
+            GLWrapper.ActiveTexture(TextureUnit.Texture0);
             GLWrapper.GL.BindTexture(TextureTarget.TextureCubeMap, _cubemapTexture);
             GLWrapper.GL.Uniform1(u_cubemapTextureLoc, 0);
             GLWrapper.GL.Uniform1(u_roughnessLoc, 0.0f);
@@ -402,7 +402,7 @@ namespace Game {
 
         unsafe void SaveCubemapTexture(uint texture, int faceSize, int mipLevel, string outputDir, int processCount, string prefix) {
             for (int face = 0; face < 6; face++) {
-                GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+                GLWrapper.BindFramebuffer((int)_framebuffer);
                 GLWrapper.GL.FramebufferTexture2D(
                     FramebufferTarget.Framebuffer,
                     FramebufferAttachment.ColorAttachment0,
@@ -435,7 +435,7 @@ namespace Game {
                 }
 
                 var image = new Engine.Media.Image(sharpImage);
-                string filename = $"{processCount}_ibl_{prefix}_{FaceNames[face]}.png";
+                string filename = string.Format("{0}_ibl_{1}_{2}.png", processCount, prefix, FaceNames[face]);
                 string filepath = Storage.CombinePaths(outputDir, filename);
                 Engine.Media.Image.Save(image, filepath, ImageFileFormat.Png, true);
                 Log.Information(string.Format("[glTF PBR Shader] Saved: {0}", filepath));
@@ -443,7 +443,7 @@ namespace Game {
         }
 
         unsafe void SaveLutTexture(uint texture, string outputDir, int processCount, string prefix) {
-            GLWrapper.GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+            GLWrapper.BindFramebuffer((int)_framebuffer);
             GLWrapper.GL.FramebufferTexture2D(
                 FramebufferTarget.Framebuffer,
                 FramebufferAttachment.ColorAttachment0,
@@ -477,7 +477,7 @@ namespace Game {
             }
 
             var image = new Engine.Media.Image(sharpImage);
-            string filename = $"{processCount}_ibl_{prefix}.png";
+            string filename = string.Format("{0}_ibl_{1}.png", processCount, prefix);
             string filepath = Storage.CombinePaths(outputDir, filename);
             Engine.Media.Image.Save(image, filepath, ImageFileFormat.Png, true);
             Log.Information(string.Format("[glTF PBR Shader] Saved: {0}", filepath));

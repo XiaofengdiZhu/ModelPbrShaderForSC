@@ -64,7 +64,7 @@ namespace Game {
             if (Transmission == null) {
                 return;
             }
-            GLWrapper.GL.ClearColor(0f, 0f, 0f, 1f);
+            GLWrapper.ClearColor(new Engine.Vector4(0f, 0f, 0f, 1f));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 

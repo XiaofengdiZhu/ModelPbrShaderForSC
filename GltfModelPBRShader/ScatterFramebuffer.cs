@@ -63,7 +63,7 @@ namespace Game {
         /// 清除为透明黑色（散射贡献为 0）
         /// </summary>
         public void ClearTransparent() {
-            GLWrapper.GL.ClearColor(0f, 0f, 0f, 0f);
+            GLWrapper.ClearColor(new Engine.Vector4(0f, 0f, 0f, 0f));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
