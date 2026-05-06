@@ -1,23 +1,19 @@
 using System;
 using Engine;
 using Engine.Graphics;
-using Engine.Media;
 using Silk.NET.OpenGLES;
-using PrimitiveType = Silk.NET.OpenGLES.PrimitiveType;
 
 namespace Game {
     public class IblSampler : IDisposable {
-        readonly int _ggxSampleCount = 1024;
-        readonly int _lambertianSampleCount = 2048;
+        readonly int _ggxSampleCount = 256;
+        readonly int _lambertianSampleCount = 512;
         readonly int _lowestMipLevel = 4;
-        readonly int _lutResolution = 1024;
+        readonly int _lutResolution = 512;
         readonly int _sheenSampleCount = 64;
         int _textureSize = 256;
         CubemapTexture _sourceCubemap;
         bool _disposed;
-        CubemapRenderTarget _tempRenderTarget;
-        IblFilteringShader _iblFilteringShader;
-        RenderTarget2D _lutRenderTarget;
+        ComputeShader _computeShader;
 
         public CubemapTexture LambertianTexture { get; private set; }
         public CubemapTexture GGXTexture { get; private set; }
@@ -27,11 +23,9 @@ namespace Game {
         public int MipCount { get; private set; }
 
         public void Dispose() {
-            if (_disposed) {
-                return;
-            }
+            if (_disposed) return;
             _disposed = true;
-            _sourceCubemap?.Dispose();
+            // _sourceCubemap owned by EnvironmentCapture, do not dispose here
             _sourceCubemap = null;
             LambertianTexture?.Dispose();
             LambertianTexture = null;
@@ -43,73 +37,52 @@ namespace Game {
             GGXLut = null;
             CharlieLut?.Dispose();
             CharlieLut = null;
-            _tempRenderTarget?.Dispose();
-            _tempRenderTarget = null;
-            _lutRenderTarget?.Dispose();
-            _lutRenderTarget = null;
-            _iblFilteringShader?.Dispose();
-            _iblFilteringShader = null;
         }
 
         public void Process(CubemapTexture cubemapTexture, int size) {
-            Viewport savedViewport = Display.Viewport;
-
-            GLWrapper.Disable(EnableCap.CullFace);
-            GLWrapper.Disable(EnableCap.ScissorTest);
-
             try {
                 _textureSize = size;
                 _sourceCubemap = cubemapTexture;
 
                 int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
-                LambertianTexture = new CubemapTexture(size, 1, ColorFormat.Rgba16f);
+                LambertianTexture = CreateImmutableCubemap(size, 1);
                 LambertianTexture.SetFilterMode(true);
-                GGXTexture = new CubemapTexture(size, maxMipLevels, ColorFormat.Rgba16f);
-                SheenTexture = new CubemapTexture(size, maxMipLevels, ColorFormat.Rgba16f);
+                GGXTexture = CreateImmutableCubemap(size, maxMipLevels);
+                SheenTexture = CreateImmutableCubemap(size, maxMipLevels);
 
                 GGXTexture.SetFilterMode(true);
-                GGXTexture.GenerateMipMaps();
                 SheenTexture.SetFilterMode(true);
-                SheenTexture.GenerateMipMaps();
 
-                MipCount = maxMipLevels - _lowestMipLevel;
+                MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 2);
 
-                _tempRenderTarget = new CubemapRenderTarget(size, 1, ColorFormat.Rgba16f, DepthFormat.None);
+                string shaderSource = LoadShaderSource("ibl_filtering.comp");
+                _computeShader = ComputeShader.Create(shaderSource);
 
-                _iblFilteringShader = IblFilteringShader.Create();
                 CubeMapToLambertian();
                 CubeMapToGGX();
                 CubeMapToSheen();
                 GenerateGGXLut();
                 GenerateCharlieLut();
-
-                _tempRenderTarget.Dispose();
-                _tempRenderTarget = null;
-                _iblFilteringShader.Dispose();
-                _iblFilteringShader = null;
             }
             finally {
                 GLWrapper.UseProgram(0);
                 GLWrapper.ActiveTexture(TextureUnit.Texture0);
-                GLWrapper.BindTexture(TextureTarget.Texture2D, 0, true);
                 GLWrapper.BindTexture(TextureTarget.TextureCubeMap, 0, true);
-                Display.Viewport = savedViewport;
 
-                GLWrapper.Enable(EnableCap.CullFace);
-                GLWrapper.Enable(EnableCap.ScissorTest);
-
+                _computeShader?.Dispose();
+                _computeShader = null;
                 _sourceCubemap = null;
             }
         }
 
         void CubeMapToLambertian() {
-            ApplyFilter(0, 0.0f, 0, LambertianTexture, _lambertianSampleCount);
+            ApplyFilterCompute(0, 0.0f, 0, LambertianTexture, _lambertianSampleCount);
         }
 
         void CubeMapToGGX() {
             for (int mipLevel = 0; mipLevel <= MipCount; mipLevel++) {
                 float roughness = MipCount > 1 ? (float)Math.Pow((double)mipLevel / (MipCount - 1), 2) : 0.0f;
-                ApplyFilter(1, roughness, mipLevel, GGXTexture, _ggxSampleCount);
+                ApplyFilterCompute(1, roughness, mipLevel, GGXTexture, _ggxSampleCount);
             }
         }
 
@@ -118,58 +91,82 @@ namespace Game {
             for (int mipLevel = 0; mipLevel <= MipCount; mipLevel++) {
                 float roughness = MipCount > 1 ? (float)Math.Pow((double)mipLevel / (MipCount - 1), 2) : minSheenRoughness;
                 roughness = Math.Max(roughness, minSheenRoughness);
-                ApplyFilter(2, roughness, mipLevel, SheenTexture, _sheenSampleCount);
+                ApplyFilterCompute(2, roughness, mipLevel, SheenTexture, _sheenSampleCount);
             }
         }
 
-        void ApplyFilter(int distribution, float roughness, int targetMipLevel, CubemapTexture targetTexture, int sampleCount) {
-            _iblFilteringShader.CubemapTexture = _sourceCubemap;
-            _iblFilteringShader.Roughness = roughness;
-            _iblFilteringShader.SampleCount = sampleCount;
-            _iblFilteringShader.Width = _textureSize;
-            _iblFilteringShader.LodBias = 0.0f;
-            _iblFilteringShader.Distribution = distribution;
-            _iblFilteringShader.IsGeneratingLUT = 0;
-            _iblFilteringShader.FloatTexture = 1;
-            _iblFilteringShader.IntensityScale = 1.0f;
+        void ApplyFilterCompute(int distribution, float roughness, int targetMipLevel, CubemapTexture targetTexture, int sampleCount) {
+            int mipSize = Math.Max(1, _textureSize >> targetMipLevel);
+            int groups = (mipSize + 7) / 8;
 
-            int currentTextureSize = Math.Max(1, _textureSize >> targetMipLevel);
+            _computeShader.Use();
+            _computeShader.BindImageCubemap(0, targetTexture, targetMipLevel);
+            _computeShader.SetSamplerCube("u_cubemapTexture", 0, _sourceCubemap);
+            _computeShader.SetFloat("u_roughness", roughness);
+            _computeShader.SetInt("u_sampleCount", sampleCount);
+            _computeShader.SetInt("u_width", mipSize);
+            _computeShader.SetFloat("u_lodBias", 0.0f);
+            _computeShader.SetInt("u_distribution", distribution);
+            _computeShader.SetInt("u_isGeneratingLUT", 0);
 
-            for (int i = 0; i < 6; i++) {
-                GLWrapper.BindFramebuffer(_tempRenderTarget.m_frameBuffer);
-                GLWrapper.GL.FramebufferTexture2D(
-                    FramebufferTarget.Framebuffer,
-                    FramebufferAttachment.ColorAttachment0,
-                    TextureTarget.TextureCubeMapPositiveX + i,
-                    (uint)targetTexture.m_texture,
-                    targetMipLevel
-                );
-                GLWrapper.GL.Viewport(0, 0, (uint)currentTextureSize, (uint)currentTextureSize);
-                GLWrapper.m_viewport = null;
-                GLWrapper.ClearColor(new Engine.Vector4(0.0f, 0.0f, 0.0f, 1.0f));
-                GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
-                _iblFilteringShader.CurrentFace = i;
-                _iblFilteringShader.FlushUniforms();
-
-                GLWrapper.GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-            }
+            _computeShader.Dispatch(groups, groups, 6);
+            ComputeShader.MemoryBarrier();
         }
 
         void GenerateGGXLut() {
-            GGXLut = new Texture2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f);
+            GGXLut = CreateImmutableTexture2D(_lutResolution, _lutResolution, 1);
             SetLinearFilter(GGXLut);
-            _lutRenderTarget = new RenderTarget2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f, DepthFormat.None);
-            SampleLut(1, GGXLut);
+            GenerateLutCompute(1, GGXLut);
         }
 
         void GenerateCharlieLut() {
-            CharlieLut = new Texture2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f);
+            CharlieLut = CreateImmutableTexture2D(_lutResolution, _lutResolution, 1);
             SetLinearFilter(CharlieLut);
-            if (_lutRenderTarget == null) {
-                _lutRenderTarget = new RenderTarget2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f, DepthFormat.None);
-            }
-            SampleLut(2, CharlieLut);
+            GenerateLutCompute(2, CharlieLut);
+        }
+
+        void GenerateLutCompute(int distribution, Texture2D targetTexture) {
+            int groups = (_lutResolution + 7) / 8;
+
+            _computeShader.Use();
+            _computeShader.BindImage2D(0, targetTexture, 0);
+            _computeShader.SetSamplerCube("u_cubemapTexture", 0, _sourceCubemap);
+            _computeShader.SetFloat("u_roughness", 0.0f);
+            _computeShader.SetInt("u_sampleCount", 512);
+            _computeShader.SetInt("u_width", _lutResolution);
+            _computeShader.SetFloat("u_lodBias", 0.0f);
+            _computeShader.SetInt("u_distribution", distribution);
+            _computeShader.SetInt("u_isGeneratingLUT", 1);
+
+            _computeShader.Dispatch(groups, groups, 1);
+            ComputeShader.MemoryBarrier();
+        }
+
+        static unsafe CubemapTexture CreateImmutableCubemap(int size, int mipLevels) {
+            var tex = new CubemapTexture();
+            tex.Size = size;
+            tex.ColorFormat = ColorFormat.Rgba16f;
+            tex.MipLevelsCount = mipLevels;
+
+            GLWrapper.GL.GenTextures(1, out uint glTex);
+            GLWrapper.BindTexture(TextureTarget.TextureCubeMap, (int)glTex, true);
+            GLWrapper.GL.TexStorage2D(TextureTarget.TextureCubeMap, (uint)mipLevels, SizedInternalFormat.Rgba16f, (uint)size, (uint)size);
+            tex.m_texture = (int)glTex;
+            return tex;
+        }
+
+        static unsafe Texture2D CreateImmutableTexture2D(int width, int height, int mipLevels) {
+            var tex = new Texture2D();
+            tex.Width = width;
+            tex.Height = height;
+            tex.ColorFormat = ColorFormat.Rgba16f;
+            tex.MipLevelsCount = mipLevels;
+
+            GLWrapper.GL.GenTextures(1, out uint glTex);
+            GLWrapper.BindTexture(TextureTarget.Texture2D, (int)glTex, true);
+            GLWrapper.GL.TexStorage2D(TextureTarget.Texture2D, (uint)mipLevels, SizedInternalFormat.Rgba16f, (uint)width, (uint)height);
+            tex.m_texture = (int)glTex;
+            return tex;
         }
 
         static void SetLinearFilter(Texture2D texture) {
@@ -178,138 +175,10 @@ namespace Game {
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         }
 
-        void SampleLut(int distribution, Texture2D targetTexture) {
-            _iblFilteringShader.CubemapTexture = _sourceCubemap;
-            _iblFilteringShader.Roughness = 0.0f;
-            _iblFilteringShader.SampleCount = 512;
-            _iblFilteringShader.Width = 0;
-            _iblFilteringShader.LodBias = 0.0f;
-            _iblFilteringShader.Distribution = distribution;
-            _iblFilteringShader.CurrentFace = 0;
-            _iblFilteringShader.IsGeneratingLUT = 1;
-            _iblFilteringShader.FloatTexture = 1;
-            _iblFilteringShader.IntensityScale = 1.0f;
-
-            GLWrapper.BindFramebuffer(_lutRenderTarget.m_frameBuffer);
-            GLWrapper.GL.FramebufferTexture2D(
-                FramebufferTarget.Framebuffer,
-                FramebufferAttachment.ColorAttachment0,
-                TextureTarget.Texture2D,
-                (uint)targetTexture.m_texture,
-                0
-            );
-            GLWrapper.GL.Viewport(0, 0, (uint)_lutResolution, (uint)_lutResolution);
-            GLWrapper.m_viewport = null;
-            GLWrapper.ClearColor(new Engine.Vector4(0.0f, 0.0f, 0.0f, 1.0f));
-            GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
-            _iblFilteringShader.FlushUniforms();
-            GLWrapper.GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
-        }
-
-        static readonly string[] FaceNames = ["posX", "negX", "posY", "negY", "posZ", "negZ"];
-
-        public unsafe void SaveIblResults(int processCount) {
-            try {
-                string outputDir = RunPath.GetOperatingPath();
-
-                SaveCubemapTexture(LambertianTexture, _textureSize, 0, outputDir, processCount, "lambertian");
-                for (int mip = 0; mip <= Math.Min(MipCount, 2); mip++) {
-                    int mipSize = Math.Max(1, _textureSize >> mip);
-                    SaveCubemapTexture(GGXTexture, mipSize, mip, outputDir, processCount, string.Format("ggx_mip{0}", mip));
-                }
-                SaveLutTexture(GGXLut, outputDir, processCount, "ggx_lut");
-
-                Log.Information(string.Format("[glTF PBR Shader] Saved IBL results to {0}", outputDir));
-            }
-            catch (Exception ex) {
-                Log.Warning(string.Format("[glTF PBR Shader] Failed to save IBL results: {0}", ex.Message));
-            }
-        }
-
-        unsafe void SaveCubemapTexture(CubemapTexture texture, int faceSize, int mipLevel, string outputDir, int processCount, string prefix) {
-            using CubemapRenderTarget tempRt = new(faceSize, 1, ColorFormat.Rgba16f, DepthFormat.None);
-            for (int face = 0; face < 6; face++) {
-                GLWrapper.BindFramebuffer(tempRt.m_frameBuffer);
-                GLWrapper.GL.FramebufferTexture2D(
-                    FramebufferTarget.Framebuffer,
-                    FramebufferAttachment.ColorAttachment0,
-                    TextureTarget.TextureCubeMapPositiveX + face,
-                    (uint)texture.m_texture,
-                    mipLevel
-                );
-
-                Half[] halfPixels = new Half[faceSize * faceSize * 4];
-                fixed (Half* ptr = halfPixels) {
-                    GLWrapper.GL.ReadPixels(0, 0, (uint)faceSize, (uint)faceSize, PixelFormat.Rgba, PixelType.HalfFloat, ptr);
-                }
-
-                var sharpImage = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(
-                    Image.DefaultImageSharpConfiguration, faceSize, faceSize);
-                for (int y = 0; y < faceSize; y++) {
-                    for (int x = 0; x < faceSize; x++) {
-                        int srcY = faceSize - 1 - y;
-                        int srcIdx = (srcY * faceSize + x) * 4;
-                        float r = (float)halfPixels[srcIdx];
-                        float g = (float)halfPixels[srcIdx + 1];
-                        float b = (float)halfPixels[srcIdx + 2];
-                        sharpImage[x, y] = new SixLabors.ImageSharp.PixelFormats.Rgba32(
-                            (byte)Math.Clamp(r * 255, 0, 255),
-                            (byte)Math.Clamp(g * 255, 0, 255),
-                            (byte)Math.Clamp(b * 255, 0, 255),
-                            255
-                        );
-                    }
-                }
-
-                var image = new Engine.Media.Image(sharpImage);
-                string filename = string.Format("{0}_ibl_{1}_{2}.png", processCount, prefix, FaceNames[face]);
-                string filepath = Storage.CombinePaths(outputDir, filename);
-                Engine.Media.Image.Save(image, filepath, ImageFileFormat.Png, true);
-                Log.Information(string.Format("[glTF PBR Shader] Saved: {0}", filepath));
-            }
-        }
-
-        unsafe void SaveLutTexture(Texture2D texture, string outputDir, int processCount, string prefix) {
-            using RenderTarget2D tempRt = new(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f, DepthFormat.None);
-            GLWrapper.BindFramebuffer(tempRt.m_frameBuffer);
-            GLWrapper.GL.FramebufferTexture2D(
-                FramebufferTarget.Framebuffer,
-                FramebufferAttachment.ColorAttachment0,
-                TextureTarget.Texture2D,
-                (uint)texture.m_texture,
-                0
-            );
-
-            int size = _lutResolution;
-            Half[] halfPixels = new Half[size * size * 4];
-            fixed (Half* ptr = halfPixels) {
-                GLWrapper.GL.ReadPixels(0, 0, (uint)size, (uint)size, PixelFormat.Rgba, PixelType.HalfFloat, ptr);
-            }
-
-            var sharpImage = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(
-                Image.DefaultImageSharpConfiguration, size, size);
-            for (int y = 0; y < size; y++) {
-                for (int x = 0; x < size; x++) {
-                    int srcY = size - 1 - y;
-                    int srcIdx = (srcY * size + x) * 4;
-                    float r = (float)halfPixels[srcIdx];
-                    float g = (float)halfPixels[srcIdx + 1];
-                    float b = (float)halfPixels[srcIdx + 2];
-                    sharpImage[x, y] = new SixLabors.ImageSharp.PixelFormats.Rgba32(
-                        (byte)Math.Clamp(r * 255, 0, 255),
-                        (byte)Math.Clamp(g * 255, 0, 255),
-                        (byte)Math.Clamp(b * 255, 0, 255),
-                        255
-                    );
-                }
-            }
-
-            var image = new Engine.Media.Image(sharpImage);
-            string filename = string.Format("{0}_ibl_{1}.png", processCount, prefix);
-            string filepath = Storage.CombinePaths(outputDir, filename);
-            Engine.Media.Image.Save(image, filepath, ImageFileFormat.Png, true);
-            Log.Information(string.Format("[glTF PBR Shader] Saved: {0}", filepath));
+        static string LoadShaderSource(string shaderName) {
+            string path = Storage.CombinePaths("GltfModelPbrShaders", shaderName);
+            System.IO.Stream stream = ContentManager.GetStream(path);
+            return new System.IO.StreamReader(stream).ReadToEnd();
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using Engine;
@@ -70,8 +71,7 @@ namespace Game {
         const float CaptureDistanceThreshold = 1.5f;      // 触发捕获的移动距离（米）
         const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
         const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
-        const int EnvironmentMapFaceSize = 256;             // Cubemap 每面分辨率
-
+        const int EnvironmentMapFaceSize = 128;             // Cubemap 每面分辨率
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
 
@@ -192,6 +192,8 @@ namespace Game {
                 Log.Information($"[glTF PBR Shader] Environment capture complete, MipCount={playerData.MipCount}");
             }
             catch (Exception ex) {
+                playerData.IblSampler?.Dispose();
+                playerData.IblSampler = null;
                 Log.Error($"[glTF PBR Shader] Environment capture failed: {ex.Message}\n{ex.StackTrace}");
             }
         }
@@ -223,7 +225,6 @@ namespace Game {
             AddShader(shaders, basePath, "specular_glossiness.frag");
             AddShader(shaders, basePath, "scatter.frag");
             AddShader(shaders, "GltfModelPbrShaders/", "fullscreen.vert");
-            AddShader(shaders, "GltfModelPbrShaders/", "ibl_filtering.frag");
             ShaderCache.LoadShaderSources(shaders, basePath);
             AnimationPlayer.MorphWeightAnimationEnabled = true;
             _shadersLoaded = true;
