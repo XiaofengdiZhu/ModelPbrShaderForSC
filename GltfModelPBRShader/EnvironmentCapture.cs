@@ -82,18 +82,6 @@ namespace Game {
                 GLWrapper.m_mainFramebuffer = savedMainFramebuffer;
                 Display.RenderTarget = previousRenderTarget;
                 Display.Viewport = previousViewport;
-
-                GLWrapper.m_program = -1;
-                GLWrapper.m_framebuffer = -1;
-                GLWrapper.m_lastShader = null;
-                GLWrapper.m_texture2D = -1;
-                GLWrapper.m_lastVertexDeclaration = null;
-                GLWrapper.m_lastVertexOffset = IntPtr.Zero;
-                GLWrapper.m_lastArrayBuffer = -1;
-                GLWrapper.m_viewport = null;
-                GLWrapper.m_rasterizerState = null;
-                GLWrapper.m_depthStencilState = null;
-                GLWrapper.m_blendState = null;
             }
 
             return _cubemapRenderTarget;
