@@ -64,6 +64,7 @@ namespace Game {
 
                 int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
                 LambertianTexture = new CubemapTexture(size, 1, ColorFormat.Rgba16f);
+                LambertianTexture.SetFilterMode(true);
                 GGXTexture = new CubemapTexture(size, maxMipLevels, ColorFormat.Rgba16f);
                 SheenTexture = new CubemapTexture(size, maxMipLevels, ColorFormat.Rgba16f);
 
@@ -89,7 +90,6 @@ namespace Game {
                 _iblFilteringShader = null;
             }
             finally {
-                GLWrapper.BindFramebuffer(0);
                 GLWrapper.UseProgram(0);
                 GLWrapper.ActiveTexture(TextureUnit.Texture0);
                 GLWrapper.BindTexture(TextureTarget.Texture2D, 0, true);
@@ -174,16 +174,24 @@ namespace Game {
 
         void GenerateGGXLut() {
             GGXLut = new Texture2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f);
+            SetLinearFilter(GGXLut);
             _lutRenderTarget = new RenderTarget2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f, DepthFormat.None);
             SampleLut(1, GGXLut);
         }
 
         void GenerateCharlieLut() {
             CharlieLut = new Texture2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f);
+            SetLinearFilter(CharlieLut);
             if (_lutRenderTarget == null) {
                 _lutRenderTarget = new RenderTarget2D(_lutResolution, _lutResolution, 1, ColorFormat.Rgba16f, DepthFormat.None);
             }
             SampleLut(2, CharlieLut);
+        }
+
+        static void SetLinearFilter(Texture2D texture) {
+            GLWrapper.BindTexture(TextureTarget.Texture2D, texture.m_texture, true);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         }
 
         void SampleLut(int distribution, Texture2D targetTexture) {
