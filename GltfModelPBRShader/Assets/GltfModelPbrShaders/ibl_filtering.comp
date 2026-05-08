@@ -19,25 +19,25 @@ const int cLambertian = 0;
 const int cGGX = 1;
 const int cCharlie = 2;
 
+// Map face index + normalized UV [-1,1] to 3D direction matching OpenGL cubemap convention.
+// OpenGL cubemap face mapping (Table 8.21):
+//   sc = (2*(x+0.5)/w - 1), tc = (2*(y+0.5)/h - 1)
+//   Face 0 (+X): direction(1, -tc, -sc)
+//   Face 1 (-X): direction(-1, -tc, sc)
+//   Face 2 (+Y): direction(sc, 1, tc)
+//   Face 3 (-Y): direction(sc, -1, -tc)
+//   Face 4 (+Z): direction(sc, -tc, 1)
+//   Face 5 (-Z): direction(-sc, -tc, -1)
 vec3 uvToXYZ(int face, vec2 uv)
 {
-    if (face == 0)
-    return vec3(1.f, uv.y, -uv.x);
-
-    else if (face == 1)
-    return vec3(-1.f, uv.y, uv.x);
-
-    else if (face == 2)
-    return vec3(+uv.x, -1.f, +uv.y);
-
-    else if (face == 3)
-    return vec3(+uv.x, 1.f, -uv.y);
-
-    else if (face == 4)
-    return vec3(+uv.x, uv.y, 1.f);
-
-    else
-    return vec3(-uv.x, +uv.y, -1.f);
+    float sc = uv.x;
+    float tc = uv.y;
+    if (face == 0)      return vec3(1.0, -tc, -sc);
+    else if (face == 1) return vec3(-1.0, -tc, sc);
+    else if (face == 2) return vec3(sc, 1.0, tc);
+    else if (face == 3) return vec3(sc, -1.0, -tc);
+    else if (face == 4) return vec3(sc, -tc, 1.0);
+    else                return vec3(-sc, -tc, -1.0);
 }
 
 float saturate(float v)
@@ -61,25 +61,9 @@ vec2 hammersley2d(int i, int N) {
 
 mat3 generateTBN(vec3 normal)
 {
-    vec3 bitangent = vec3(0.0, 1.0, 0.0);
-
-    float NdotUp = dot(normal, vec3(0.0, 1.0, 0.0));
-    float epsilon = 0.0000001;
-    if (1.0 - abs(NdotUp) <= epsilon)
-    {
-        if (NdotUp > 0.0)
-        {
-            bitangent = vec3(0.0, 0.0, 1.0);
-        }
-        else
-        {
-            bitangent = vec3(0.0, 0.0, -1.0);
-        }
-    }
-
-    vec3 tangent = normalize(cross(bitangent, normal));
-    bitangent = cross(normal, tangent);
-
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
     return mat3(tangent, bitangent, normal);
 }
 
@@ -196,6 +180,23 @@ float computeLod(float pdf)
     return lod;
 }
 
+// Source cubemap has 180° screen rotation for horizontal faces (±X, ±Z) due to
+// engine's left-handed rendering. Compensate by flipping Y and the non-dominant
+// horizontal axis: flip Z for ±X faces, flip X for ±Z faces.
+vec3 sampleSource(vec3 dir, float lod)
+{
+    float ax = abs(dir.x), ay = abs(dir.y), az = abs(dir.z);
+    if (ax > ay || az > ay)
+    {
+        dir.y = -dir.y;
+        if (ax >= az)
+            dir.z = -dir.z;
+        else
+            dir.x = -dir.x;
+    }
+    return textureLod(u_cubemapTexture, dir, lod).rgb;
+}
+
 vec3 filterColor(vec3 N)
 {
     vec3 color = vec3(0.f);
@@ -209,12 +210,11 @@ vec3 filterColor(vec3 N)
         float pdf = importanceSample.w;
 
         float lod = computeLod(pdf);
-
         lod += u_lodBias;
 
         if (u_distribution == cLambertian)
         {
-            vec3 lambertian = textureLod(u_cubemapTexture, H, lod).rgb;
+            vec3 lambertian = sampleSource(H, lod);
             color += lambertian;
         }
         else if (u_distribution == cGGX || u_distribution == cCharlie)
@@ -229,7 +229,7 @@ vec3 filterColor(vec3 N)
                 {
                     lod = u_lodBias;
                 }
-                vec3 sampleColor = textureLod(u_cubemapTexture, L, lod).rgb;
+                vec3 sampleColor = sampleSource(L, lod);
                 color += sampleColor * NdotL;
                 weight += NdotL;
             }
@@ -314,19 +314,10 @@ void main() {
         vec2 texCoord = (vec2(x, y) + 0.5) / float(u_width);
         vec2 newUV = texCoord * 2.0 - 1.0;
 
-        vec3 scan = uvToXYZ(face, newUV);
-        vec3 direction = normalize(scan);
-        direction.y = -direction.y;
-
+        vec3 direction = normalize(uvToXYZ(face, newUV));
         vec3 color = filterColor(direction);
 
-        int storeX = x;
-        int storeY = y;
-        if (face != 2 && face != 3) {
-            storeX = u_width - 1 - x;
-            storeY = u_width - 1 - y;
-        }
-        imageStore(u_outputCubemap, ivec3(storeX, storeY, face), vec4(color, 1.0));
+        imageStore(u_outputCubemap, ivec3(x, y, face), vec4(color, 1.0));
     }
     else {
         int x = int(gl_GlobalInvocationID.x);

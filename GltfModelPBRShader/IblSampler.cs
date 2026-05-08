@@ -10,10 +10,11 @@ namespace Game {
         readonly int _lowestMipLevel = 4;
         readonly int _lutResolution = 512;
         readonly int _sheenSampleCount = 64;
-        int _textureSize = 256;
+        int _textureSize;
         CubemapTexture _sourceCubemap;
         bool _disposed;
         ComputeShader _computeShader;
+        bool _lutGenerated;
 
         public CubemapTexture LambertianTexture { get; private set; }
         public CubemapTexture GGXTexture { get; private set; }
@@ -25,7 +26,8 @@ namespace Game {
         public void Dispose() {
             if (_disposed) return;
             _disposed = true;
-            // _sourceCubemap owned by EnvironmentCapture, do not dispose here
+            _computeShader?.Dispose();
+            _computeShader = null;
             _sourceCubemap = null;
             LambertianTexture?.Dispose();
             LambertianTexture = null;
@@ -45,33 +47,47 @@ namespace Game {
                 _sourceCubemap = cubemapTexture;
 
                 int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
-                LambertianTexture = CreateImmutableCubemap(size, 1);
-                LambertianTexture.SetFilterMode(true);
-                GGXTexture = CreateImmutableCubemap(size, maxMipLevels);
-                SheenTexture = CreateImmutableCubemap(size, maxMipLevels);
-
-                GGXTexture.SetFilterMode(true);
-                SheenTexture.SetFilterMode(true);
-
                 MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 2);
 
-                string shaderSource = LoadShaderSource("ibl_filtering.comp");
-                _computeShader = ComputeShader.Create(shaderSource);
+                EnsureCubemapTextures(size, maxMipLevels);
+
+                _computeShader ??= ComputeShader.Create(LoadShaderSource("ibl_filtering.comp"));
 
                 CubeMapToLambertian();
                 CubeMapToGGX();
                 CubeMapToSheen();
-                GenerateGGXLut();
-                GenerateCharlieLut();
+
+                if (!_lutGenerated) {
+                    GenerateGGXLut();
+                    GenerateCharlieLut();
+                    _lutGenerated = true;
+                }
             }
             finally {
                 GLWrapper.UseProgram(0);
                 GLWrapper.ActiveTexture(TextureUnit.Texture0);
                 GLWrapper.BindTexture(TextureTarget.TextureCubeMap, 0, true);
-
-                _computeShader?.Dispose();
-                _computeShader = null;
                 _sourceCubemap = null;
+            }
+        }
+
+        void EnsureCubemapTextures(int size, int maxMipLevels) {
+            if (LambertianTexture == null || LambertianTexture.Size != size) {
+                LambertianTexture?.Dispose();
+                LambertianTexture = CreateImmutableCubemap(size, 1);
+                LambertianTexture.SetFilterMode(true);
+            }
+
+            if (GGXTexture == null || GGXTexture.MipLevelsCount != maxMipLevels) {
+                GGXTexture?.Dispose();
+                GGXTexture = CreateImmutableCubemap(size, maxMipLevels);
+                GGXTexture.SetFilterMode(true);
+            }
+
+            if (SheenTexture == null || SheenTexture.MipLevelsCount != maxMipLevels) {
+                SheenTexture?.Dispose();
+                SheenTexture = CreateImmutableCubemap(size, maxMipLevels);
+                SheenTexture.SetFilterMode(true);
             }
         }
 

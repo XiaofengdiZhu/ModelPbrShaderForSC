@@ -122,7 +122,6 @@ namespace Game {
             if (PlayerEnvironments.TryGetValue(playerIndex, out PlayerEnvironmentData data)) {
                 data.Dispose();
                 PlayerEnvironments.Remove(playerIndex);
-                Log.Information($"[glTF PBR Shader] Cleaned up player environment data for player {playerIndex}");
             }
         }
 
@@ -174,22 +173,17 @@ namespace Game {
             try {
                 int faceSize = EnvironmentMapFaceSize;
 
-                Log.Information($"[glTF PBR Shader] Capturing environment at {capturePosition}");
-
                 // 捕获环境贴图到 Cubemap
                 CubemapTexture cubemapTexture = _environmentCapture.CaptureEnvironment(camera.GameWidget, capturePosition, faceSize);
 
-                // 处理为 IBL 采样器
-                playerData.IblSampler?.Dispose();
-                playerData.IblSampler = new IblSampler();
+                // 处理为 IBL 采样器（复用实例，LUT 只生成一次）
+                playerData.IblSampler ??= new IblSampler();
                 playerData.IblSampler.Process(cubemapTexture, faceSize);
                 playerData.MipCount = playerData.IblSampler.MipCount;
 
                 // 更新捕获状态
                 playerData.LastCapturePosition = capturePosition;
                 playerData.LastCaptureTime = Time.FrameStartTime;
-
-                Log.Information($"[glTF PBR Shader] Environment capture complete, MipCount={playerData.MipCount}");
             }
             catch (Exception ex) {
                 playerData.IblSampler?.Dispose();
