@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.IO;
 using System.Numerics;
@@ -72,6 +73,18 @@ namespace Game {
         const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
         const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
         const int EnvironmentMapFaceSize = 128;             // Cubemap 每面分辨率
+
+        // 捕获调度
+        static readonly List<List<CaptureStep>> DefaultSchedule = [
+            [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1, CaptureStep.CaptureFace2],
+            [CaptureStep.CaptureFace3, CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
+            [CaptureStep.FilterLambertian, CaptureStep.FilterGGX, CaptureStep.FilterSheen]
+        ];
+        List<List<CaptureStep>> _captureSchedule;
+
+        public void SetCaptureSchedule(List<List<CaptureStep>> schedule) {
+            _captureSchedule = schedule;
+        }
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
 
@@ -129,6 +142,9 @@ namespace Game {
         /// 检查是否应该捕获环境贴图
         /// </summary>
         bool ShouldCapture(PlayerEnvironmentData playerData, Vector3 currentPosition) {
+            if (playerData.Phase != CapturePhase.Idle) {
+                return false;
+            }
             if (_subsystemSky.ViewFogColor.A == 0) {
                 return false;
             }
@@ -164,34 +180,64 @@ namespace Game {
             playerData.CachedPlayerLight = light ?? _subsystemSky.SkyLightIntensity;
         }
 
-        /// <summary>
-        /// 执行环境贴图捕获
-        /// </summary>
-        void CaptureEnvironment(Camera camera, PlayerEnvironmentData playerData, Vector3 capturePosition) {
-            if (_environmentCapture == null) {
-                Log.Warning("[glTF PBR Shader] EnvironmentCapture is null, skipping capture");
+        void AdvanceCapture(PlayerEnvironmentData pd) {
+            var schedule = _captureSchedule ?? DefaultSchedule;
+            List<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
+
+            try {
+                if (steps.Contains(CaptureStep.PrepareCapture)) {
+                    _environmentCapture.PrepareCapture(
+                        _camera.GameWidget, pd.PendingCapturePosition, EnvironmentMapFaceSize);
+                }
+
+                var faceSteps = steps.Where(s => s >= CaptureStep.CaptureFace0
+                                               && s <= CaptureStep.CaptureFace5).ToList();
+                if (faceSteps.Count > 0) {
+                    _environmentCapture.BeginFaceGroup();
+                    try {
+                        foreach (CaptureStep step in faceSteps) {
+                            _environmentCapture.CaptureFace((int)(step - CaptureStep.CaptureFace0));
+                        }
+                    }
+                    finally {
+                        _environmentCapture.EndFaceGroup();
+                    }
+                }
+
+                if (steps.Contains(CaptureStep.FinalizeCapture)) {
+                    CubemapTexture cubemap = _environmentCapture.FinalizeCapture();
+                    pd.IblSampler ??= new IblSampler();
+                    pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
+                }
+
+                foreach (CaptureStep step in steps) {
+                    switch (step) {
+                        case CaptureStep.FilterLambertian:
+                            pd.IblSampler.ProcessLambertian();
+                            break;
+                        case CaptureStep.FilterGGX:
+                            pd.IblSampler.ProcessGGX();
+                            break;
+                        case CaptureStep.FilterSheen:
+                            pd.IblSampler.ProcessSheen();
+                            pd.MipCount = pd.IblSampler.MipCount;
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex) {
+                pd.IblSampler?.Dispose();
+                pd.IblSampler = null;
+                pd.Phase = CapturePhase.Idle;
+                Log.Error($"[glTF PBR Shader] Capture failed: {ex.Message}\n{ex.StackTrace}");
                 return;
             }
 
-            try {
-                int faceSize = EnvironmentMapFaceSize;
-
-                // 捕获环境贴图到 Cubemap
-                CubemapTexture cubemapTexture = _environmentCapture.CaptureEnvironment(camera.GameWidget, capturePosition, faceSize);
-
-                // 处理为 IBL 采样器（复用实例，LUT 只生成一次）
-                playerData.IblSampler ??= new IblSampler();
-                playerData.IblSampler.Process(cubemapTexture, faceSize);
-                playerData.MipCount = playerData.IblSampler.MipCount;
-
-                // 更新捕获状态
-                playerData.LastCapturePosition = capturePosition;
-                playerData.LastCaptureTime = Time.FrameStartTime;
-            }
-            catch (Exception ex) {
-                playerData.IblSampler?.Dispose();
-                playerData.IblSampler = null;
-                Log.Error($"[glTF PBR Shader] Environment capture failed: {ex.Message}\n{ex.StackTrace}");
+            pd.ScheduleFrameIndex++;
+            if (pd.ScheduleFrameIndex >= schedule.Count) {
+                pd.LastCapturePosition = pd.PendingCapturePosition;
+                pd.LastCaptureTime = Time.FrameStartTime;
+                pd.Phase = CapturePhase.Idle;
             }
         }
 
@@ -407,9 +453,15 @@ namespace Game {
                 // 更新玩家光照缓存
                 UpdatePlayerLightCache(_currentPlayerData, capturePosition);
 
-                // 检查是否需要捕获环境贴图
-                if (ShouldCapture(_currentPlayerData, capturePosition)) {
-                    CaptureEnvironment(camera, _currentPlayerData, capturePosition);
+                // 推进或启动捕获管道
+                if (_currentPlayerData.Phase != CapturePhase.Idle) {
+                    AdvanceCapture(_currentPlayerData);
+                }
+                else if (ShouldCapture(_currentPlayerData, capturePosition)) {
+                    _currentPlayerData.Phase = CapturePhase.Active;
+                    _currentPlayerData.ScheduleFrameIndex = 0;
+                    _currentPlayerData.PendingCapturePosition = capturePosition;
+                    AdvanceCapture(_currentPlayerData);
                 }
 
                 // 使用当前玩家的 IBL 采样器（如果已创建）

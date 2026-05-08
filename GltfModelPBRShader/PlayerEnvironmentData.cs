@@ -39,6 +39,21 @@ namespace Game {
         public float CachedPlayerLight;
 
         /// <summary>
+        /// 当前捕获阶段
+        /// </summary>
+        public CapturePhase Phase;
+
+        /// <summary>
+        /// 当前调度表帧索引
+        /// </summary>
+        public int ScheduleFrameIndex;
+
+        /// <summary>
+        /// 待处理的捕获位置
+        /// </summary>
+        public Vector3 PendingCapturePosition;
+
+        /// <summary>
         /// 释放所有资源
         /// </summary>
         public void Dispose() {

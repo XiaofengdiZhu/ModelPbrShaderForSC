@@ -16,6 +16,17 @@ namespace Game {
 
         bool _disposed;
 
+        // Multi-frame capture state
+        List<TerrainChunk> _captureChunks;
+        Vector3 _capturePosition;
+        float _captureFarPlane;
+        Viewport _cubemapViewport;
+        Rectangle _cubemapScissor;
+        Viewport _savedViewport;
+        Rectangle _savedScissor;
+        RenderTarget2D _savedRenderTarget;
+        int _savedMainFramebuffer;
+
         static readonly (Vector3 Target, Vector3 Up)[] CubemapFaces = [
             (Vector3.UnitX, Vector3.UnitY),
             (-Vector3.UnitX, Vector3.UnitY),
@@ -31,60 +42,61 @@ namespace Game {
             _terrainRenderer = subsystemTerrain.TerrainRenderer;
         }
 
-        public CubemapTexture CaptureEnvironment(GameWidget gameWidget, Vector3 capturePosition, int faceSize) {
-            if (_terrainRenderer == null) return null;
+        public void PrepareCapture(GameWidget gameWidget, Vector3 capturePosition, int faceSize) {
+            if (_terrainRenderer == null) return;
 
             _camera ??= new CubemapCamera(gameWidget);
             _camera.GameWidget = gameWidget;
-
             EnsureCubemapResources(faceSize);
 
-            Viewport previousViewport = Display.Viewport;
-            RenderTarget2D previousRenderTarget = Display.RenderTarget;
-            int savedMainFramebuffer = GLWrapper.m_mainFramebuffer;
+            _capturePosition = capturePosition;
+            _captureFarPlane = _subsystemSky.VisibilityRange;
+            _captureChunks = CullChunksByDistance(capturePosition, _captureFarPlane);
 
-            float farPlane = _subsystemSky.VisibilityRange;
+            int compensateY = Display.BackbufferSize.Y - faceSize;
+            _cubemapViewport = new Viewport(0, compensateY, faceSize, faceSize);
+            _cubemapScissor = new Rectangle(0, compensateY, faceSize, faceSize);
+        }
 
-            // Pre-filter chunks by distance (once for all faces)
-            List<TerrainChunk> visibleChunks = CullChunksByDistance(capturePosition, farPlane);
+        public void BeginFaceGroup() {
+            _savedViewport = Display.Viewport;
+            _savedScissor = Display.ScissorRectangle;
+            _savedRenderTarget = Display.RenderTarget;
+            _savedMainFramebuffer = GLWrapper.m_mainFramebuffer;
 
-            try {
-                GLWrapper.m_mainFramebuffer = _cubemapRenderTarget.m_frameBuffer;
-                Display.RenderTarget = null;
+            GLWrapper.m_mainFramebuffer = _cubemapRenderTarget.m_frameBuffer;
+            Display.RenderTarget = null;
+        }
 
-                int compensateY = Display.BackbufferSize.Y - faceSize;
-                Viewport cubemapViewport = new Viewport(0, compensateY, faceSize, faceSize);
-                Rectangle cubemapScissor = new Rectangle(0, compensateY, faceSize, faceSize);
+        public void CaptureFace(int face) {
+            _cubemapRenderTarget.BindFace(face);
+            GLWrapper.m_framebuffer = -1;
 
-                for (int face = 0; face < 6; face++) {
-                    _cubemapRenderTarget.BindFace(face);
-                    GLWrapper.m_framebuffer = -1;
+            Display.Viewport = _cubemapViewport;
+            Display.ScissorRectangle = _cubemapScissor;
 
-                    Display.Viewport = cubemapViewport;
-                    Display.ScissorRectangle = cubemapScissor;
+            GLWrapper.ClearColor(new Vector4(_subsystemSky.ViewFogColor));
+            GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-                    GLWrapper.ClearColor(new Vector4(_subsystemSky.ViewFogColor));
-                    GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            var (target, up) = CubemapFaces[face];
+            _camera.SetupForCubemapFace(_capturePosition, target, up, _captureFarPlane);
+            PrepareChunksForFace(_captureChunks);
 
-                    var (target, up) = CubemapFaces[face];
-                    _camera.SetupForCubemapFace(capturePosition, target, up, farPlane);
+            _terrainRenderer.DrawOpaque(_camera);
+            _terrainRenderer.DrawAlphaTested(_camera);
+            _terrainRenderer.DrawTransparent(_camera);
+        }
 
-                    // Frustum cull pre-filtered chunks (skips full PrepareForDrawing)
-                    PrepareChunksForFace(visibleChunks);
+        public void EndFaceGroup() {
+            GLWrapper.m_mainFramebuffer = _savedMainFramebuffer;
+            Display.RenderTarget = _savedRenderTarget;
+            Display.ScissorRectangle = _savedScissor;
+            Display.Viewport = _savedViewport;
+        }
 
-                    _terrainRenderer.DrawOpaque(_camera);
-                    _terrainRenderer.DrawAlphaTested(_camera);
-                    _terrainRenderer.DrawTransparent(_camera);
-                }
-
-                _cubemapRenderTarget.GenerateMipMaps();
-            }
-            finally {
-                GLWrapper.m_mainFramebuffer = savedMainFramebuffer;
-                Display.RenderTarget = previousRenderTarget;
-                Display.Viewport = previousViewport;
-            }
-
+        public CubemapTexture FinalizeCapture() {
+            _cubemapRenderTarget.GenerateMipMaps();
+            _captureChunks = null;
             return _cubemapRenderTarget;
         }
 

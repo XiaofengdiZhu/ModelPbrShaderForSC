@@ -41,34 +41,43 @@ namespace Game {
             CharlieLut = null;
         }
 
-        public void Process(CubemapTexture cubemapTexture, int size) {
-            try {
-                _textureSize = size;
-                _sourceCubemap = cubemapTexture;
+        public void BeginProcess(CubemapTexture cubemapTexture, int size) {
+            _textureSize = size;
+            _sourceCubemap = cubemapTexture;
 
-                int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
-                MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 2);
+            int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
+            MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 2);
 
-                EnsureCubemapTextures(size, maxMipLevels);
+            EnsureCubemapTextures(size, maxMipLevels);
 
-                _computeShader ??= ComputeShader.Create(LoadShaderSource("ibl_filtering.comp"));
+            _computeShader ??= ComputeShader.Create(LoadShaderSource("ibl_filtering.comp"));
+        }
 
-                CubeMapToLambertian();
-                CubeMapToGGX();
-                CubeMapToSheen();
+        public void ProcessLambertian() {
+            CubeMapToLambertian();
+            CleanupComputeState();
+        }
 
-                if (!_lutGenerated) {
-                    GenerateGGXLut();
-                    GenerateCharlieLut();
-                    _lutGenerated = true;
-                }
+        public void ProcessGGX() {
+            CubeMapToGGX();
+            CleanupComputeState();
+        }
+
+        public void ProcessSheen() {
+            CubeMapToSheen();
+            if (!_lutGenerated) {
+                GenerateGGXLut();
+                GenerateCharlieLut();
+                _lutGenerated = true;
             }
-            finally {
-                GLWrapper.UseProgram(0);
-                GLWrapper.ActiveTexture(TextureUnit.Texture0);
-                GLWrapper.BindTexture(TextureTarget.TextureCubeMap, 0, true);
-                _sourceCubemap = null;
-            }
+            CleanupComputeState();
+            _sourceCubemap = null;
+        }
+
+        void CleanupComputeState() {
+            GLWrapper.UseProgram(0);
+            GLWrapper.ActiveTexture(TextureUnit.Texture0);
+            GLWrapper.BindTexture(TextureTarget.TextureCubeMap, 0, true);
         }
 
         void EnsureCubemapTextures(int size, int maxMipLevels) {
