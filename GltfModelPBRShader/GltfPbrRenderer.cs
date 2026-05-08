@@ -69,16 +69,19 @@ namespace Game {
         PlayerEnvironmentData _currentPlayerData;
 
         // 捕获常量
-        const float CaptureDistanceThreshold = 1.5f;      // 触发捕获的移动距离（米）
-        const float CaptureTimeThresholdNear = 1f;        // 移动后的最短捕获间隔（秒）
-        const float CaptureTimeThresholdFar = 3f;         // 静止时的捕获间隔（秒）
-        const int EnvironmentMapFaceSize = 128;             // Cubemap 每面分辨率
+        const float CaptureMoveDistanceThreshold = 1.5f; // 触发捕获的移动距离（米）
+        const float CaptureTimeThresholdNear = 1f; // 移动后的最短捕获间隔（秒）
+        const float CaptureTimeThresholdFar = 3f; // 静止时的捕获间隔（秒）
+        const int EnvironmentMapFaceSize = 256; // Cubemap 每面分辨率
+        public const float CaptureMaxVisibilityRange = 64f; // 要捕获的地形区块的最大距离（米）
 
         // 捕获调度
         static readonly List<List<CaptureStep>> DefaultSchedule = [
             [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1, CaptureStep.CaptureFace2],
             [CaptureStep.CaptureFace3, CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
-            [CaptureStep.FilterLambertian, CaptureStep.FilterGGX, CaptureStep.FilterSheen]
+            [CaptureStep.FilterLambertian],
+            [CaptureStep.FilterGGX],
+            [CaptureStep.FilterSheen]
         ];
         List<List<CaptureStep>> _captureSchedule;
 
@@ -152,7 +155,7 @@ namespace Game {
             double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
 
             bool result;
-            if (distanceMoved > CaptureDistanceThreshold) {
+            if (distanceMoved > CaptureMoveDistanceThreshold) {
                 result = timeSinceCapture > CaptureTimeThresholdNear;
             }
             else {
@@ -187,7 +190,11 @@ namespace Game {
             try {
                 if (steps.Contains(CaptureStep.PrepareCapture)) {
                     _environmentCapture.PrepareCapture(
-                        _camera.GameWidget, pd.PendingCapturePosition, EnvironmentMapFaceSize);
+                        _camera.GameWidget,
+                        pd.PendingCapturePosition,
+                        EnvironmentMapFaceSize,
+                        Math.Min(_subsystemSky.VisibilityRange, GltfPbrRenderer.CaptureMaxVisibilityRange)
+                    );
                 }
 
                 var faceSteps = steps.Where(s => s >= CaptureStep.CaptureFace0

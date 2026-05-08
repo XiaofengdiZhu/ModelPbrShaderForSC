@@ -42,7 +42,7 @@ namespace Game {
             _terrainRenderer = subsystemTerrain.TerrainRenderer;
         }
 
-        public void PrepareCapture(GameWidget gameWidget, Vector3 capturePosition, int faceSize) {
+        public void PrepareCapture(GameWidget gameWidget, Vector3 capturePosition, int faceSize, float captureFarPlane) {
             if (_terrainRenderer == null) return;
 
             _camera ??= new CubemapCamera(gameWidget);
@@ -50,7 +50,7 @@ namespace Game {
             EnsureCubemapResources(faceSize);
 
             _capturePosition = capturePosition;
-            _captureFarPlane = _subsystemSky.VisibilityRange;
+            _captureFarPlane = captureFarPlane;
             _captureChunks = CullChunksByDistance(capturePosition, _captureFarPlane);
 
             int compensateY = Display.BackbufferSize.Y - faceSize;
@@ -75,12 +75,19 @@ namespace Game {
             Display.Viewport = _cubemapViewport;
             Display.ScissorRectangle = _cubemapScissor;
 
-            GLWrapper.ClearColor(new Vector4(_subsystemSky.ViewFogColor));
+            GLWrapper.ClearColor(new Vector4(0, 0, 0, 1));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            var (target, up) = CubemapFaces[face];
+            (Vector3 target, Vector3 up) = CubemapFaces[face];
+
+            // Skydome 半径 1800，需要大 far plane 避免裁剪
+            _camera.SetupForCubemapFace(_capturePosition, target, up, 2000f);
+            _subsystemSky.DrawSkydome(_camera);
+
+            // 恢复正常 far plane 用于地形渲染和裁剪
             _camera.SetupForCubemapFace(_capturePosition, target, up, _captureFarPlane);
-            PrepareChunksForFace(_captureChunks);
+
+            PrepareChunksForFace(_captureChunks, face);
 
             _terrainRenderer.DrawOpaque(_camera);
             _terrainRenderer.DrawAlphaTested(_camera);
@@ -105,8 +112,7 @@ namespace Game {
             Vector2 center2d = new(center.X, center.Z);
             List<TerrainChunk> result = [];
             TerrainChunk[] chunks = _subsystemTerrain.Terrain.AllocatedChunks;
-            for (int i = 0; i < chunks.Length; i++) {
-                TerrainChunk chunk = chunks[i];
+            foreach (TerrainChunk chunk in chunks) {
                 if (chunk.Buffers.Count > 0 && Vector2.DistanceSquared(center2d, chunk.Center) <= rangeSq) {
                     result.Add(chunk);
                 }
@@ -114,12 +120,18 @@ namespace Game {
             return result;
         }
 
-        void PrepareChunksForFace(List<TerrainChunk> candidates) {
+        void PrepareChunksForFace(List<TerrainChunk> candidates, int face) {
             _terrainRenderer.m_chunksToDraw.Clear();
             BoundingFrustum frustum = _camera.ViewFrustum;
-            for (int i = 0; i < candidates.Count; i++) {
-                TerrainChunk chunk = candidates[i];
-                if (frustum.Intersection(chunk.BoundingBox)) {
+            foreach (TerrainChunk chunk in candidates) {
+                if (chunk.Buffers.Count > 0
+                    && chunk.State >= TerrainChunkState.Valid
+                    && frustum.Intersection(chunk.BoundingBox)) {
+                    if ((face == 2 || face == 3)
+                        && (Math.Abs(_capturePosition.X - chunk.Center.X) > 24
+                            || Math.Abs(_capturePosition.Z - chunk.Center.Y) > 24)) {
+                        continue;
+                    }
                     _terrainRenderer.m_chunksToDraw.Add(chunk);
                 }
             }
