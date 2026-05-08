@@ -129,6 +129,9 @@ namespace Game {
         /// 检查是否应该捕获环境贴图
         /// </summary>
         bool ShouldCapture(PlayerEnvironmentData playerData, Vector3 currentPosition) {
+            if (_subsystemSky.ViewFogColor.A == 0) {
+                return false;
+            }
             float distanceMoved = Vector3.Distance(currentPosition, playerData.LastCapturePosition);
             double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
 

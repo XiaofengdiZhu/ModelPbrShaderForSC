@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Engine;
 using Engine.Graphics;
 using Silk.NET.OpenGLES;
@@ -44,6 +45,9 @@ namespace Game {
 
             float farPlane = _subsystemSky.VisibilityRange;
 
+            // Pre-filter chunks by distance (once for all faces)
+            List<TerrainChunk> visibleChunks = CullChunksByDistance(capturePosition, farPlane);
+
             try {
                 GLWrapper.m_mainFramebuffer = _cubemapRenderTarget.m_frameBuffer;
                 Display.RenderTarget = null;
@@ -65,7 +69,8 @@ namespace Game {
                     var (target, up) = CubemapFaces[face];
                     _camera.SetupForCubemapFace(capturePosition, target, up, farPlane);
 
-                    _terrainRenderer.PrepareForDrawing(_camera);
+                    // Frustum cull pre-filtered chunks (skips full PrepareForDrawing)
+                    PrepareChunksForFace(visibleChunks);
 
                     _terrainRenderer.DrawOpaque(_camera);
                     _terrainRenderer.DrawAlphaTested(_camera);
@@ -81,6 +86,31 @@ namespace Game {
             }
 
             return _cubemapRenderTarget;
+        }
+
+        List<TerrainChunk> CullChunksByDistance(Vector3 center, float visibilityRange) {
+            float rangeSq = visibilityRange * visibilityRange;
+            Vector2 center2d = new(center.X, center.Z);
+            List<TerrainChunk> result = [];
+            TerrainChunk[] chunks = _subsystemTerrain.Terrain.AllocatedChunks;
+            for (int i = 0; i < chunks.Length; i++) {
+                TerrainChunk chunk = chunks[i];
+                if (chunk.Buffers.Count > 0 && Vector2.DistanceSquared(center2d, chunk.Center) <= rangeSq) {
+                    result.Add(chunk);
+                }
+            }
+            return result;
+        }
+
+        void PrepareChunksForFace(List<TerrainChunk> candidates) {
+            _terrainRenderer.m_chunksToDraw.Clear();
+            BoundingFrustum frustum = _camera.ViewFrustum;
+            for (int i = 0; i < candidates.Count; i++) {
+                TerrainChunk chunk = candidates[i];
+                if (frustum.Intersection(chunk.BoundingBox)) {
+                    _terrainRenderer.m_chunksToDraw.Add(chunk);
+                }
+            }
         }
 
         void EnsureCubemapResources(int faceSize) {
