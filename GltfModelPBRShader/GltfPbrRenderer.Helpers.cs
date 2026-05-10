@@ -54,13 +54,6 @@ namespace Game {
             if (glymulLoc >= 0) {
                 GLWrapper.GL.Uniform1(glymulLoc, Display.RenderTarget != null ? -1f : 1f);
             }
-            if (!_terrainLightLocCache.TryGetValue(programHandle, out int terrainLightLoc)) {
-                terrainLightLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TerrainLight");
-                _terrainLightLocCache[programHandle] = terrainLightLoc;
-            }
-            if (terrainLightLoc >= 0) {
-                GLWrapper.GL.Uniform1(terrainLightLoc, modelData.Light);
-            }
             if (!_celestialBodyVisibleLocCache.TryGetValue(programHandle, out int celestialBodyVisibleLoc)) {
                 celestialBodyVisibleLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_CelestialBody");
                 _celestialBodyVisibleLocCache[programHandle] = celestialBodyVisibleLoc;

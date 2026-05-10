@@ -36,9 +36,8 @@ precision highp float;
 out vec4 g_finalColor;
 
 #ifdef USE_INSTANCING
-in vec3 v_instanceLight;
+in vec2 v_instanceLight;
 #else
-uniform float u_TerrainLight;
 uniform float u_CelestialBody;
 uniform float u_IblStrength;
 #endif
@@ -175,7 +174,7 @@ void main()
 
     // Get IBL strength (instanced: from vertex attribute, non-instanced: from uniform)
 #ifdef USE_INSTANCING
-    float iblStrength = v_instanceLight.z;
+    float iblStrength = v_instanceLight.y;
 #else
     float iblStrength = u_IblStrength;
 #endif
@@ -246,12 +245,8 @@ void main()
         color = color * (1.0 + u_OcclusionStrength * (ao - 1.0));
     #endif
 
-        // Scale IBL by terrain light and IBL strength
-#ifdef USE_INSTANCING
-        color *= v_instanceLight.x * iblStrength;
-#else
-        color *= u_TerrainLight * iblStrength;
-#endif
+        // Scale IBL by IBL strength
+        color *= iblStrength;
     } // iblStrength > 0.0
 
     #endif//end USE_IBL
@@ -324,7 +319,7 @@ void main()
         // not to glTF model punctual lights
         if (light.type == LightType_Directional) {
 #ifdef USE_INSTANCING
-            lightIntensity *= v_instanceLight.y;
+            lightIntensity *= v_instanceLight.x;
 #else
             lightIntensity *= u_CelestialBody;
 #endif
@@ -384,7 +379,7 @@ void main()
         vec3 intensity = getLighIntensity(light, pointToLight);
         if (light.type == LightType_Directional) {
 #ifdef USE_INSTANCING
-            intensity *= v_instanceLight.y;
+            intensity *= v_instanceLight.x;
 #else
             intensity *= u_CelestialBody;
 #endif

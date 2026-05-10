@@ -6,7 +6,6 @@ using Engine.Graphics;
 using Engine.Media;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
-using Vector2 = Engine.Vector2;
 using Vector3 = Engine.Vector3;
 
 namespace Game {
@@ -25,7 +24,7 @@ namespace Game {
     public abstract partial class AdvancedMeshRenderer : ICustomModelRenderer {
         protected const int MaxInstancesPerBatch = 256;
 
-        // Locations 8-11: instance model matrix (mat4), location 12: instance light data (vec2), location 13: IBL strength (float)
+        // Locations 8-11: instance model matrix (mat4), location 12: CelestialBody (float), location 13: IBL strength (float)
         protected const int InstanceLightAttribLocation = 12;
         protected const int InstanceIblStrengthAttribLocation = 13;
 
@@ -42,7 +41,6 @@ namespace Game {
 
         // Uniform location 缓存
         readonly Dictionary<int, int> _jointSamplerLocationCache = [];
-        protected readonly Dictionary<int, int> _terrainLightLocCache = [];
 
         // 帧级光照数据（逐模型缩放时使用）
         Vector3 _baseLightColor;
@@ -51,7 +49,7 @@ namespace Game {
 
         // 缓存优化
         bool _instanceBufferCreated;
-        protected Vector2[] _instanceLightData = new Vector2[MaxInstancesPerBatch];
+        protected float[] _instanceLightData = new float[MaxInstancesPerBatch];
         protected float[] _instanceIblStrengthData = new float[MaxInstancesPerBatch];
         int _instanceLightVBO;
         int _instanceIblStrengthVBO;

@@ -11,7 +11,6 @@ using Engine.Media;
 using Silk.NET.OpenGLES;
 using Shader = Engine.Graphics.Shader;
 using Vector4 = System.Numerics.Vector4;
-using Vector2 = Engine.Vector2;
 using Vector3 = Engine.Vector3;
 using Matrix = Engine.Matrix;
 
@@ -628,7 +627,7 @@ namespace Game {
                 UpdateRenderStateUBOForInstancing();
                 Matrix4x4 worldMatrix = GetWorldMatrixForEntry(entry);
                 _instanceMatrices[0] = worldMatrix;
-                _instanceLightData[0] = new Vector2(entry.ModelData.Light, GetCelestialBodyVisible(entry.ModelData) ? 1f : 0f);
+                _instanceLightData[0] = GetCelestialBodyVisible(entry.ModelData) ? 1f : 0f;
                 _instanceIblStrengthData[0] = CalculateIblStrength(entry.ModelData);
                 UploadInstanceData(_instanceMatrices, 1);
                 UploadInstanceLightData(_instanceLightData, 1);
@@ -757,7 +756,7 @@ namespace Game {
                             && posCount + negCount < MaxInstancesPerBatch) {
                             PartRenderEntry e = groupEntries[entryIdx];
                             Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
-                            Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
+                            float light = GetCelestialBodyVisible(e.ModelData) ? 1f : 0f;
                             float iblStrength = CalculateIblStrength(e.ModelData);
                             while (instanceIdx < instancesPerEntry
                                 && posCount + negCount < MaxInstancesPerBatch) {
@@ -807,7 +806,7 @@ namespace Game {
                         for (int i = 0; i < count; i++) {
                             PartRenderEntry e = groupEntries[offset + i];
                             Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
-                            Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
+                            float light = GetCelestialBodyVisible(e.ModelData) ? 1f : 0f;
                             float iblStrength = CalculateIblStrength(e.ModelData);
                             Matrix engineMatrix = GetBoneTransformForEntry(e);
                             if (engineMatrix.Determinant() < 0f) {
@@ -1028,12 +1027,12 @@ namespace Game {
             float iblStrength;
             if (DynamicIblEnabled && _currentPlayerData != null) {
                 float playerLight = _currentPlayerData.CachedPlayerLight;
-                if (playerLight <= 0f) {
+                if (playerLight < 0f) {
                     playerLight = 1f;
                 }
 
                 float ratio = modelLight / playerLight;
-                iblStrength = MathF.Sqrt(Math.Min(ratio, 1f)) * EnvironmentStrength;
+                iblStrength = ratio * EnvironmentStrength;
             }
             else {
                 iblStrength = EnvironmentStrength;

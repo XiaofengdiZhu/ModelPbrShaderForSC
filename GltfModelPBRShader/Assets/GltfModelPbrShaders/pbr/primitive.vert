@@ -36,7 +36,7 @@ out float v_TangentWSign;
 #endif
 
 #ifdef USE_INSTANCING
-out vec3 v_instanceLight;
+out vec2 v_instanceLight;
 #endif
 
 #ifdef HAS_TEXCOORD_0_VEC2
@@ -62,7 +62,7 @@ out vec4 v_Color;
 
 #ifdef USE_INSTANCING
 in mat4 a_instance_model_matrix;
-in vec2 a_instance_light;
+in float a_instance_light;
 in float a_instance_ibl_strength;
 #endif
 
@@ -203,7 +203,7 @@ void main()
     // Instanced: modelMatrix from per-instance attribute, Projection shared
 #ifdef USE_INSTANCING
     gl_Position = u_ProjectionMatrix * modelMatrix * localPos;
-    v_instanceLight = vec3(a_instance_light, a_instance_ibl_strength);
+    v_instanceLight = vec2(a_instance_light, a_instance_ibl_strength);
 #else
     gl_Position = u_ViewProjectionMatrix * localPos;
 #endif

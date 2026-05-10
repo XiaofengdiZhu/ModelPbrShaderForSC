@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Engine.Graphics;
 using Silk.NET.OpenGLES;
-using Vector2 = Engine.Vector2;
 
 namespace Game {
     partial class AdvancedMeshRenderer {
@@ -18,7 +17,7 @@ namespace Game {
                 GLWrapper.GL.GenBuffers(1, out uint lightBuffer);
                 _instanceLightVBO = (int)lightBuffer;
                 GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
-                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 8, (void*)0, BufferUsageARB.DynamicDraw);
+                GLWrapper.GL.BufferData(BufferTargetARB.ArrayBuffer, MaxInstancesPerBatch * 4, (void*)0, BufferUsageARB.DynamicDraw);
                 GLWrapper.GL.GenBuffers(1, out uint iblBuffer);
                 _instanceIblStrengthVBO = (int)iblBuffer;
                 GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceIblStrengthVBO);
@@ -37,11 +36,11 @@ namespace Game {
             }
         }
 
-        protected void UploadInstanceLightData(Vector2[] lightData, int count) {
+        protected void UploadInstanceLightData(float[] lightData, int count) {
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
             unsafe {
-                fixed (Vector2* ptr = lightData) {
-                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 8), ptr);
+                fixed (float* ptr = lightData) {
+                    GLWrapper.GL.BufferSubData(BufferTargetARB.ArrayBuffer, 0, (nuint)(count * 4), ptr);
                 }
             }
         }
@@ -67,7 +66,7 @@ namespace Game {
             }
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, _instanceLightVBO);
             unsafe {
-                GLWrapper.GL.VertexAttribPointer(InstanceLightAttribLocation, 2, VertexAttribPointerType.Float, false, 8, (void*)0);
+                GLWrapper.GL.VertexAttribPointer(InstanceLightAttribLocation, 1, VertexAttribPointerType.Float, false, 4, (void*)0);
                 GLWrapper.GL.EnableVertexAttribArray(InstanceLightAttribLocation);
                 GLWrapper.GL.VertexAttribDivisor(InstanceLightAttribLocation, 1);
             }
