@@ -33,6 +33,7 @@ namespace Game {
                 || part.IndexBuffer == null) {
                 return;
             }
+            GLWrapper.ApplyViewportScissor(Display.Viewport, Display.ScissorRectangle, Display.RasterizerState.ScissorTestEnable);
             GLWrapper.BindBuffer(BufferTargetARB.ArrayBuffer, part.VertexBuffer.m_buffer);
             GLWrapper.BindBuffer(BufferTargetARB.ElementArrayBuffer, part.IndexBuffer.m_buffer);
             SetupVertexAttributes(part.VertexBuffer.VertexDeclaration);
