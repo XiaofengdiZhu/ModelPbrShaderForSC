@@ -73,7 +73,7 @@ namespace Game {
                 _iblStrengthLocCache[programHandle] = iblStrengthLoc;
             }
             if (iblStrengthLoc >= 0) {
-                GLWrapper.GL.Uniform1(iblStrengthLoc, IblSampler != null ? EnvironmentStrength : 0f);
+                GLWrapper.GL.Uniform1(iblStrengthLoc, CalculateIblStrength(modelData));
             }
             UpdateLightsUBO(modelData.Light);
         }

@@ -129,6 +129,7 @@ void main()
     vec3 f_diffuse = vec3(0.0);
     vec3 f_dielectric_brdf_ibl = vec3(0.0);
     vec3 f_metal_brdf_ibl = vec3(0.0);
+    vec3 f_dielectric_fresnel_ibl = vec3(0.0);
     vec3 f_emissive = vec3(0.0);
     vec3 clearcoat_brdf = vec3(0.0);
     vec3 f_sheen = vec3(0.0);
@@ -217,7 +218,7 @@ void main()
         vec3 f_metal_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, baseColor.rgb, 1.0);
         f_metal_brdf_ibl = f_metal_fresnel_ibl * f_specular_metal;
 
-        vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
+        f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
         f_dielectric_brdf_ibl = mix(f_diffuse, f_specular_dielectric, f_dielectric_fresnel_ibl);
 
     #ifdef MATERIAL_IRIDESCENCE

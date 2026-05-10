@@ -629,7 +629,7 @@ namespace Game {
                 Matrix4x4 worldMatrix = GetWorldMatrixForEntry(entry);
                 _instanceMatrices[0] = worldMatrix;
                 _instanceLightData[0] = new Vector2(entry.ModelData.Light, GetCelestialBodyVisible(entry.ModelData) ? 1f : 0f);
-                _instanceIblStrengthData[0] = CalculateIblStrength(entry.ModelData, worldMatrix);
+                _instanceIblStrengthData[0] = CalculateIblStrength(entry.ModelData);
                 UploadInstanceData(_instanceMatrices, 1);
                 UploadInstanceLightData(_instanceLightData, 1);
                 UploadInstanceIblStrengthData(_instanceIblStrengthData, 1);
@@ -758,7 +758,7 @@ namespace Game {
                             PartRenderEntry e = groupEntries[entryIdx];
                             Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
                             Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
-                            float iblStrength = CalculateIblStrength(e.ModelData, worldMatrix);
+                            float iblStrength = CalculateIblStrength(e.ModelData);
                             while (instanceIdx < instancesPerEntry
                                 && posCount + negCount < MaxInstancesPerBatch) {
                                 // gltfLocal 先于 world 变换（行向量约定：v * gltfLocal * world）
@@ -808,7 +808,7 @@ namespace Game {
                             PartRenderEntry e = groupEntries[offset + i];
                             Matrix4x4 worldMatrix = GetWorldMatrixForEntry(e);
                             Vector2 light = new(e.ModelData.Light, GetCelestialBodyVisible(e.ModelData) ? 1f : 0f);
-                            float iblStrength = CalculateIblStrength(e.ModelData, worldMatrix);
+                            float iblStrength = CalculateIblStrength(e.ModelData);
                             Matrix engineMatrix = GetBoneTransformForEntry(e);
                             if (engineMatrix.Determinant() < 0f) {
                                 _instanceMatrices[MaxInstancesPerBatch - 1 - negCount] = worldMatrix;
@@ -1015,32 +1015,27 @@ namespace Game {
         /// 计算 IBL 强度
         /// 基于模型光照计算 IBL 贡献强度
         /// </summary>
-        float CalculateIblStrength(SubsystemModelsRenderer.ModelData modelData, Matrix4x4 worldMatrix) {
+        float CalculateIblStrength(SubsystemModelsRenderer.ModelData modelData) {
             if (IblSampler == null) {
                 return 0f;
             }
 
-            // 获取模型光照
             float modelLight = modelData.Light;
             if (modelLight <= 0f) {
                 return 0f;
             }
 
-            // 动态 IBL：使用玩家光照缓存计算强度比值
             float iblStrength;
             if (DynamicIblEnabled && _currentPlayerData != null) {
                 float playerLight = _currentPlayerData.CachedPlayerLight;
-                // 如果玩家光照无效，使用默认值
                 if (playerLight <= 0f) {
                     playerLight = 1f;
                 }
 
-                // IBL 强度比值，开方以软化对比度
                 float ratio = modelLight / playerLight;
-                iblStrength = MathF.Sqrt(Math.Min(ratio, 1f));
+                iblStrength = MathF.Sqrt(Math.Min(ratio, 1f)) * EnvironmentStrength;
             }
             else {
-                // 静态 IBL：使用 EnvironmentStrength
                 iblStrength = EnvironmentStrength;
             }
 
