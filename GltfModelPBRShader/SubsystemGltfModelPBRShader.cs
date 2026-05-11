@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using Engine;
 using Engine.Graphics;
 using GameEntitySystem;
@@ -19,7 +18,6 @@ namespace Game {
             _subsystemTerrain = Project.FindSubsystem<SubsystemTerrain>();
             _subsystemSky = Project.FindSubsystem<SubsystemSky>();
             _subsystemPlayers = Project.FindSubsystem<SubsystemPlayers>();
-
             if (PbrRenderer == null) {
                 Model.LoadTexturesInSrgb = true;
                 try {
@@ -31,14 +29,14 @@ namespace Game {
                     Log.Error($"[glTF PBR Shader] Failed to initialize: {ex.Message}\n{ex.StackTrace}");
                 }
             }
-
             if (PbrRenderer != null) {
                 _subsystemModelsRenderer.CustomRenderer = PbrRenderer;
                 _subsystemModelsRenderer.UseCustomRendering = true;
                 PbrRenderer.Initialize(_subsystemModelsRenderer);
 
                 // 初始化动态 IBL
-                if (_subsystemTerrain != null && _subsystemSky != null) {
+                if (_subsystemTerrain != null
+                    && _subsystemSky != null) {
                     PbrRenderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky);
                 }
             }
@@ -53,7 +51,6 @@ namespace Game {
             if (_subsystemPlayers != null) {
                 _subsystemPlayers.PlayerRemoved -= OnPlayerRemoved;
             }
-
             PbrRenderer?.CelestialBodyCache.Clear();
 
             // 清理所有玩家环境数据
@@ -63,7 +60,8 @@ namespace Game {
         }
 
         void OnPlayerRemoved(PlayerData playerData) {
-            if (PbrRenderer != null && playerData != null) {
+            if (PbrRenderer != null
+                && playerData != null) {
                 int playerIndex = playerData.PlayerIndex;
                 PbrRenderer.CleanupPlayerData(playerIndex);
                 Log.Information($"[glTF PBR Shader] Cleaned up environment data for player {playerIndex}");

@@ -33,7 +33,7 @@ namespace Game {
             (Vector3.UnitY, Vector3.UnitZ),
             (-Vector3.UnitY, -Vector3.UnitZ),
             (Vector3.UnitZ, Vector3.UnitY),
-            (-Vector3.UnitZ, Vector3.UnitY),
+            (-Vector3.UnitZ, Vector3.UnitY)
         ];
 
         public void Initialize(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky) {
@@ -43,16 +43,15 @@ namespace Game {
         }
 
         public void PrepareCapture(GameWidget gameWidget, Vector3 capturePosition, int faceSize, float captureFarPlane) {
-            if (_terrainRenderer == null) return;
-
+            if (_terrainRenderer == null) {
+                return;
+            }
             _camera ??= new CubemapCamera(gameWidget);
             _camera.GameWidget = gameWidget;
             EnsureCubemapResources(faceSize);
-
             _capturePosition = capturePosition;
             _captureFarPlane = captureFarPlane;
             _captureChunks = CullChunksByDistance(capturePosition, _captureFarPlane);
-
             int compensateY = Display.BackbufferSize.Y - faceSize;
             _cubemapViewport = new Viewport(0, compensateY, faceSize, faceSize);
             _cubemapScissor = new Rectangle(0, compensateY, faceSize, faceSize);
@@ -63,7 +62,6 @@ namespace Game {
             _savedScissor = Display.ScissorRectangle;
             _savedRenderTarget = Display.RenderTarget;
             _savedMainFramebuffer = GLWrapper.m_mainFramebuffer;
-
             GLWrapper.m_mainFramebuffer = _cubemapRenderTarget.m_frameBuffer;
             Display.RenderTarget = null;
         }
@@ -71,13 +69,10 @@ namespace Game {
         public void CaptureFace(int face) {
             _cubemapRenderTarget.BindFace(face);
             GLWrapper.m_framebuffer = -1;
-
             Display.Viewport = _cubemapViewport;
             Display.ScissorRectangle = _cubemapScissor;
-
             GLWrapper.ClearColor(new Vector4(0, 0, 0, 1));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
             (Vector3 target, Vector3 up) = CubemapFaces[face];
 
             // Skydome 半径 1800，需要大 far plane 避免裁剪
@@ -86,9 +81,7 @@ namespace Game {
 
             // 恢复正常 far plane 用于地形渲染和裁剪
             _camera.SetupForCubemapFace(_capturePosition, target, up, _captureFarPlane);
-
             PrepareChunksForFace(_captureChunks, face);
-
             _terrainRenderer.DrawOpaque(_camera);
             _terrainRenderer.DrawAlphaTested(_camera);
             _terrainRenderer.DrawTransparent(_camera);
@@ -113,7 +106,8 @@ namespace Game {
             List<TerrainChunk> result = [];
             TerrainChunk[] chunks = _subsystemTerrain.Terrain.AllocatedChunks;
             foreach (TerrainChunk chunk in chunks) {
-                if (chunk.Buffers.Count > 0 && Vector2.DistanceSquared(center2d, chunk.Center) <= rangeSq) {
+                if (chunk.Buffers.Count > 0
+                    && Vector2.DistanceSquared(center2d, chunk.Center) <= rangeSq) {
                     result.Add(chunk);
                 }
             }
@@ -128,8 +122,7 @@ namespace Game {
                     && chunk.State >= TerrainChunkState.Valid
                     && frustum.Intersection(chunk.BoundingBox)) {
                     if ((face == 2 || face == 3)
-                        && (Math.Abs(_capturePosition.X - chunk.Center.X) > 24
-                            || Math.Abs(_capturePosition.Z - chunk.Center.Y) > 24)) {
+                        && (Math.Abs(_capturePosition.X - chunk.Center.X) > 24 || Math.Abs(_capturePosition.Z - chunk.Center.Y) > 24)) {
                         continue;
                     }
                     _terrainRenderer.m_chunksToDraw.Add(chunk);
@@ -138,20 +131,22 @@ namespace Game {
         }
 
         void EnsureCubemapResources(int faceSize) {
-            if (_cubemapRenderTarget != null && _faceSize == faceSize) return;
-
+            if (_cubemapRenderTarget != null
+                && _faceSize == faceSize) {
+                return;
+            }
             _cubemapRenderTarget?.Dispose();
             _faceSize = faceSize;
-
             _cubemapRenderTarget = new CubemapRenderTarget(faceSize, 1, ColorFormat.Rgba16f, DepthFormat.Depth24Stencil8);
             _cubemapRenderTarget.SetFilterMode(true);
             _cubemapRenderTarget.SetWrapMode(TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge);
         }
 
         public void Dispose() {
-            if (_disposed) return;
+            if (_disposed) {
+                return;
+            }
             _disposed = true;
-
             _cubemapRenderTarget?.Dispose();
             _cubemapRenderTarget = null;
         }

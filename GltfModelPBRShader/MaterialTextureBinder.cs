@@ -69,7 +69,6 @@ namespace Game {
             BindTexture(material.NormalTexture, textures, MaterialTextureSlot.Normal);
             BindTexture(material.OcclusionTexture, textures, MaterialTextureSlot.Occlusion);
             BindTexture(material.EmissiveTexture, textures, MaterialTextureSlot.Emissive);
-
             if (material.ClearCoat?.IsEnabled == true) {
                 BindTexture(material.ClearCoat.Texture, textures, MaterialTextureSlot.ClearCoat);
                 BindTexture(material.ClearCoat.RoughnessTexture, textures, MaterialTextureSlot.ClearCoatRoughness);
@@ -111,7 +110,8 @@ namespace Game {
                 return;
             }
             int index = matTex.TextureIndex;
-            if (index < 0 || index >= textures.Length) {
+            if (index < 0
+                || index >= textures.Length) {
                 return;
             }
             Texture2D texture = textures[index];
@@ -133,8 +133,8 @@ namespace Game {
         static void ApplySamplerState(Texture2D texture) {
             int handle = (int)texture.NativeHandle;
             SamplerState sampler = texture.SamplerState;
-
-            if (_appliedSamplers.TryGetValue(handle, out SamplerState cached) && cached == sampler) {
+            if (_appliedSamplers.TryGetValue(handle, out SamplerState cached)
+                && cached == sampler) {
                 return;
             }
             _appliedSamplers[handle] = sampler;
@@ -175,7 +175,11 @@ namespace Game {
             _slotUniformLocations.Clear();
         }
 
-        public static void BindIBLTextures(CubemapTexture lambertianTexture, CubemapTexture ggxTexture, CubemapTexture charlieTexture, Texture2D ggxLut, Texture2D charlieLut) {
+        public static void BindIBLTextures(CubemapTexture lambertianTexture,
+            CubemapTexture ggxTexture,
+            CubemapTexture charlieTexture,
+            Texture2D ggxLut,
+            Texture2D charlieLut) {
             BindCubemapTexture(lambertianTexture, MaterialTextureSlot.IBLLambertian);
             BindCubemapTexture(ggxTexture, MaterialTextureSlot.IBLGGX);
             BindCubemapTexture(charlieTexture, MaterialTextureSlot.IBLCharlie);

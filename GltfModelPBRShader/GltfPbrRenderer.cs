@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Engine;
 using Engine.Animation;
@@ -82,11 +81,13 @@ namespace Game {
             [CaptureStep.FilterGGX],
             [CaptureStep.FilterSheen]
         ];
+
         List<List<CaptureStep>> _captureSchedule;
 
         public void SetCaptureSchedule(List<List<CaptureStep>> schedule) {
             _captureSchedule = schedule;
         }
+
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
 
@@ -152,7 +153,6 @@ namespace Game {
             }
             float distanceMoved = Vector3.Distance(currentPosition, playerData.LastCapturePosition);
             double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
-
             bool result;
             if (distanceMoved > CaptureMoveDistanceThreshold) {
                 result = timeSinceCapture > CaptureTimeThresholdNear;
@@ -170,7 +170,6 @@ namespace Game {
                 }
                 result = true;
             }
-
             return result;
         }
 
@@ -183,47 +182,38 @@ namespace Game {
         }
 
         void AdvanceCapture(PlayerEnvironmentData pd) {
-            var schedule = _captureSchedule ?? DefaultSchedule;
+            List<List<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
             List<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
-
             try {
                 if (steps.Contains(CaptureStep.PrepareCapture)) {
                     _environmentCapture.PrepareCapture(
                         _camera.GameWidget,
                         pd.PendingCapturePosition,
                         EnvironmentMapFaceSize,
-                        Math.Min(_subsystemSky.VisibilityRange, GltfPbrRenderer.CaptureMaxVisibilityRange)
+                        Math.Min(_subsystemSky.VisibilityRange, CaptureMaxVisibilityRange)
                     );
                 }
-
-                var faceSteps = steps.Where(s => s >= CaptureStep.CaptureFace0
-                                               && s <= CaptureStep.CaptureFace5).ToList();
+                List<CaptureStep> faceSteps = steps.Where(s => s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5).ToList();
                 if (faceSteps.Count > 0) {
                     _environmentCapture.BeginFaceGroup();
                     try {
                         foreach (CaptureStep step in faceSteps) {
-                            _environmentCapture.CaptureFace((int)(step - CaptureStep.CaptureFace0));
+                            _environmentCapture.CaptureFace(step - CaptureStep.CaptureFace0);
                         }
                     }
                     finally {
                         _environmentCapture.EndFaceGroup();
                     }
                 }
-
                 if (steps.Contains(CaptureStep.FinalizeCapture)) {
                     CubemapTexture cubemap = _environmentCapture.FinalizeCapture();
                     pd.IblSampler ??= new IblSampler();
                     pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
                 }
-
                 foreach (CaptureStep step in steps) {
                     switch (step) {
-                        case CaptureStep.FilterLambertian:
-                            pd.IblSampler.ProcessLambertian();
-                            break;
-                        case CaptureStep.FilterGGX:
-                            pd.IblSampler.ProcessGGX();
-                            break;
+                        case CaptureStep.FilterLambertian: pd.IblSampler.ProcessLambertian(); break;
+                        case CaptureStep.FilterGGX: pd.IblSampler.ProcessGGX(); break;
                         case CaptureStep.FilterSheen:
                             pd.IblSampler.ProcessSheen();
                             pd.MipCount = pd.IblSampler.MipCount;
@@ -238,7 +228,6 @@ namespace Game {
                 Log.Error($"[glTF PBR Shader] Capture failed: {ex.Message}\n{ex.StackTrace}");
                 return;
             }
-
             pd.ScheduleFrameIndex++;
             if (pd.ScheduleFrameIndex >= schedule.Count) {
                 pd.LastCapturePosition = pd.PendingCapturePosition;
@@ -476,7 +465,6 @@ namespace Game {
                     MipCount = _currentPlayerData.MipCount;
                 }
             }
-
             base.BeginFrame(camera, allModels);
             PrepareCustomQueues(allModels);
         }

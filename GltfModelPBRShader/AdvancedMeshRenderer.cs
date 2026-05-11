@@ -182,7 +182,6 @@ namespace Game {
                 lightDirection = moonDir;
                 lightColor = moonColor;
             }
-
             ActiveLightDirection = lightDirection;
             IsDirectionalLightActive = lightDirection.Y <= 0f;
             CurrentContext.View = Matrix4x4.Identity;

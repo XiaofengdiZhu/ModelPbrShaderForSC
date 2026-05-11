@@ -59,7 +59,6 @@ namespace Game {
         public void Dispose() {
             IblSampler?.Dispose();
             IblSampler = null;
-
             PanoramaRenderTarget?.Dispose();
             PanoramaRenderTarget = null;
         }

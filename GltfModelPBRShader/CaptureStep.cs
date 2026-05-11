@@ -10,6 +10,6 @@ namespace Game {
         FinalizeCapture,
         FilterLambertian,
         FilterGGX,
-        FilterSheen,
+        FilterSheen
     }
 }

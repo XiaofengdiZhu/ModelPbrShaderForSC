@@ -32,12 +32,12 @@ vec3 uvToXYZ(int face, vec2 uv)
 {
     float sc = uv.x;
     float tc = uv.y;
-    if (face == 0)      return vec3(1.0, -tc, -sc);
+    if (face == 0) return vec3(1.0, -tc, -sc);
     else if (face == 1) return vec3(-1.0, -tc, sc);
     else if (face == 2) return vec3(sc, 1.0, tc);
     else if (face == 3) return vec3(sc, -1.0, -tc);
     else if (face == 4) return vec3(sc, -tc, 1.0);
-    else                return vec3(-sc, -tc, -1.0);
+    else return vec3(-sc, -tc, -1.0);
 }
 
 float saturate(float v)

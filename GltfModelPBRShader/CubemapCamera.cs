@@ -1,5 +1,4 @@
 using Engine;
-using Engine.Graphics;
 
 namespace Game {
     /// <summary>
@@ -32,9 +31,7 @@ namespace Game {
         public override bool UsesMovementControls => false;
         public override bool IsEntityControlEnabled => false;
 
-        public CubemapCamera(GameWidget gameWidget) : base(gameWidget) {
-            ViewportSize = new Vector2(256, 256);
-        }
+        public CubemapCamera(GameWidget gameWidget) : base(gameWidget) => ViewportSize = new Vector2(256, 256);
 
         /// <summary>
         /// 设置相机朝向 Cubemap 的某个面
@@ -45,15 +42,8 @@ namespace Game {
             _invertedViewMatrix = Matrix.Invert(_viewMatrix);
 
             // 90° FOV, 1:1 aspect ratio
-            _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(
-                MathUtils.DegToRad(90f),
-                1.0f,
-                0.1f,
-                farPlane
-            );
-
+            _projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathUtils.DegToRad(90f), 1.0f, 0.1f, farPlane);
             _viewFrustum = new BoundingFrustum(ViewProjectionMatrix);
-
             _viewDirection = target;
             _viewUp = up;
             _viewRight = Vector3.Normalize(Vector3.Cross(target, up));

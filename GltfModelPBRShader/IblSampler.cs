@@ -24,7 +24,9 @@ namespace Game {
         public int MipCount { get; private set; }
 
         public void Dispose() {
-            if (_disposed) return;
+            if (_disposed) {
+                return;
+            }
             _disposed = true;
             _computeShader?.Dispose();
             _computeShader = null;
@@ -44,12 +46,9 @@ namespace Game {
         public void BeginProcess(CubemapTexture cubemapTexture, int size) {
             _textureSize = size;
             _sourceCubemap = cubemapTexture;
-
             int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
             MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 4);
-
             EnsureCubemapTextures(size, maxMipLevels);
-
             _computeShader ??= ComputeShader.Create(LoadShaderSource("ibl_filtering.comp"));
         }
 
@@ -81,19 +80,20 @@ namespace Game {
         }
 
         void EnsureCubemapTextures(int size, int maxMipLevels) {
-            if (LambertianTexture == null || LambertianTexture.Size != size) {
+            if (LambertianTexture == null
+                || LambertianTexture.Size != size) {
                 LambertianTexture?.Dispose();
                 LambertianTexture = CreateImmutableCubemap(size, 1);
                 LambertianTexture.SetFilterMode(true);
             }
-
-            if (GGXTexture == null || GGXTexture.MipLevelsCount != maxMipLevels) {
+            if (GGXTexture == null
+                || GGXTexture.MipLevelsCount != maxMipLevels) {
                 GGXTexture?.Dispose();
                 GGXTexture = CreateImmutableCubemap(size, maxMipLevels);
                 GGXTexture.SetFilterMode(true);
             }
-
-            if (SheenTexture == null || SheenTexture.MipLevelsCount != maxMipLevels) {
+            if (SheenTexture == null
+                || SheenTexture.MipLevelsCount != maxMipLevels) {
                 SheenTexture?.Dispose();
                 SheenTexture = CreateImmutableCubemap(size, maxMipLevels);
                 SheenTexture.SetFilterMode(true);
@@ -123,7 +123,6 @@ namespace Game {
         void ApplyFilterCompute(int distribution, float roughness, int targetMipLevel, CubemapTexture targetTexture, int sampleCount) {
             int mipSize = Math.Max(1, _textureSize >> targetMipLevel);
             int groups = (mipSize + 7) / 8;
-
             _computeShader.Use();
             _computeShader.BindImageCubemap(0, targetTexture, targetMipLevel);
             _computeShader.SetSamplerCube("u_cubemapTexture", 0, _sourceCubemap);
@@ -133,7 +132,6 @@ namespace Game {
             _computeShader.SetFloat("u_lodBias", 0.0f);
             _computeShader.SetInt("u_distribution", distribution);
             _computeShader.SetInt("u_isGeneratingLUT", 0);
-
             _computeShader.Dispatch(groups, groups, 6);
             ComputeShader.MemoryBarrier();
         }
@@ -154,7 +152,6 @@ namespace Game {
 
         void GenerateLutCompute(int distribution, Texture2D targetTexture) {
             int groups = (_lutResolution + 7) / 8;
-
             _computeShader.Use();
             _computeShader.BindImage2D(0, targetTexture, 0);
             _computeShader.SetSamplerCube("u_cubemapTexture", 0, _sourceCubemap);
@@ -164,17 +161,15 @@ namespace Game {
             _computeShader.SetFloat("u_lodBias", 0.0f);
             _computeShader.SetInt("u_distribution", distribution);
             _computeShader.SetInt("u_isGeneratingLUT", 1);
-
-            _computeShader.Dispatch(groups, groups, 1);
+            _computeShader.Dispatch(groups, groups);
             ComputeShader.MemoryBarrier();
         }
 
-        static unsafe CubemapTexture CreateImmutableCubemap(int size, int mipLevels) {
-            var tex = new CubemapTexture();
+        static CubemapTexture CreateImmutableCubemap(int size, int mipLevels) {
+            CubemapTexture tex = new();
             tex.Size = size;
             tex.ColorFormat = ColorFormat.Rgba16f;
             tex.MipLevelsCount = mipLevels;
-
             GLWrapper.GL.GenTextures(1, out uint glTex);
             GLWrapper.BindTexture(TextureTarget.TextureCubeMap, (int)glTex, true);
             GLWrapper.GL.TexStorage2D(TextureTarget.TextureCubeMap, (uint)mipLevels, SizedInternalFormat.Rgba16f, (uint)size, (uint)size);
@@ -182,13 +177,12 @@ namespace Game {
             return tex;
         }
 
-        static unsafe Texture2D CreateImmutableTexture2D(int width, int height, int mipLevels) {
-            var tex = new Texture2D();
+        static Texture2D CreateImmutableTexture2D(int width, int height, int mipLevels) {
+            Texture2D tex = new();
             tex.Width = width;
             tex.Height = height;
             tex.ColorFormat = ColorFormat.Rgba16f;
             tex.MipLevelsCount = mipLevels;
-
             GLWrapper.GL.GenTextures(1, out uint glTex);
             GLWrapper.BindTexture(TextureTarget.Texture2D, (int)glTex, true);
             GLWrapper.GL.TexStorage2D(TextureTarget.Texture2D, (uint)mipLevels, SizedInternalFormat.Rgba16f, (uint)width, (uint)height);
