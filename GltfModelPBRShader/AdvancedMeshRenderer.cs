@@ -101,9 +101,9 @@ namespace Game {
         public Matrix4x4 CurrentViewProjection { get; private set; }
 
         /// <summary>
-        /// IBL 环境贴图强度（默认 1.0）
+        /// IBL 环境贴图强度（默认 0.5f 效果好）
         /// </summary>
-        public float EnvironmentStrength { get; set; } = 1.0f;
+        public float EnvironmentStrength { get; set; } = 0.5f;
 
         /// <summary>
         /// 当前方向光是否在地平线以上（太阳/月亮可见）

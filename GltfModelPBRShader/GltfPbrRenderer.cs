@@ -1018,26 +1018,16 @@ namespace Game {
             if (IblSampler == null) {
                 return 0f;
             }
-
-            float modelLight = modelData.Light;
-            if (modelLight <= 0f) {
-                return 0f;
-            }
-
+            float modelLight = Math.Max(modelData.Light, 0.0625f);
             float iblStrength;
             if (DynamicIblEnabled && _currentPlayerData != null) {
-                float playerLight = _currentPlayerData.CachedPlayerLight;
-                if (playerLight < 0f) {
-                    playerLight = 1f;
-                }
-
+                float playerLight = Math.Max(_currentPlayerData.CachedPlayerLight, 0.0625f);
                 float ratio = modelLight / playerLight;
-                iblStrength = ratio * EnvironmentStrength;
+                iblStrength = MathF.Sqrt(ratio) * EnvironmentStrength;
             }
             else {
                 iblStrength = EnvironmentStrength;
             }
-
             return iblStrength;
         }
 
