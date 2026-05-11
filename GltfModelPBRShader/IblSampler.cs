@@ -46,7 +46,7 @@ namespace Game {
             _sourceCubemap = cubemapTexture;
 
             int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
-            MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 2);
+            MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 4);
 
             EnsureCubemapTextures(size, maxMipLevels);
 
@@ -140,12 +140,14 @@ namespace Game {
 
         void GenerateGGXLut() {
             GGXLut = CreateImmutableTexture2D(_lutResolution, _lutResolution, 1);
+            GGXLut.SamplerState = SamplerState.LinearClamp;
             SetLinearFilter(GGXLut);
             GenerateLutCompute(1, GGXLut);
         }
 
         void GenerateCharlieLut() {
             CharlieLut = CreateImmutableTexture2D(_lutResolution, _lutResolution, 1);
+            CharlieLut.SamplerState = SamplerState.LinearClamp;
             SetLinearFilter(CharlieLut);
             GenerateLutCompute(2, CharlieLut);
         }
@@ -198,6 +200,8 @@ namespace Game {
             GLWrapper.BindTexture(TextureTarget.Texture2D, texture.m_texture, true);
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         }
 
         static string LoadShaderSource(string shaderName) {

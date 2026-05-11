@@ -90,7 +90,7 @@ namespace Game {
         // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
         public bool DynamicIblEnabled { get; set; }
 
-        public IblSampler IblSampler { get; private set; }
+        public IblSampler IblSampler { get; set; }
 
         public override bool HasIBL => IblSampler != null;
 
