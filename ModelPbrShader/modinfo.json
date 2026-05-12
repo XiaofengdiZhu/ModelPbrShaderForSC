@@ -1,15 +1,15 @@
 {
   "$schema": "https://gitee.com/SC-SPM/SurvivalcraftApi/raw/SCAPI1.9/Survivalcraft/Content/modinfo-scheme.json",
-  "Name": "glTF Model PBR Shader",
+  "Name": "Model PBR Shader",
   "Version": "1.0.0",
   "ApiVersion": "1.9.0.0",
-  "Description": "PBR rendering for glTF models with IBL support. 为 glTF 模型提供基于图像光照的 PBR 渲染。",
+  "Description": "PBR rendering for models with IBL support. 为模型提供基于图像光照的 PBR 渲染。",
   "ScVersion": "2.4.0.0",
   "LoadOrder": 10000,
   "NonPersistentMod": true,
   "GameplayImpactLevel": "Cosmetic",
-  "Link": "https://github.com/user/GltfModelPBRShader",
+  "Link": "https://github.com/user/ModelPbrShader",
   "Author": "Your Name",
-  "PackageName": "gltf.model.pbr.shader",
+  "PackageName": "model.pbr.shader",
   "Dependencies": {}
 }

@@ -1,7 +1,7 @@
 <Mod xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://gitee.com/SC-SPM/SurvivalcraftApi/raw/SCAPI1.9/Survivalcraft/Content/Assets/Database.xsd">
   <ProjectTemplate Name="Project" Guid="85023bf8-1c90-4dd1-9442-e6c13691d078">
-    <MemberSubsystemTemplate Name="GltfModelPBRShader" Guid="baa41341-9df2-4080-b668-dcbe2dfa9ef8" InheritanceParent="a3914c13-7801-46a6-b23a-9e2b36e9defb">
-      <Parameter Name="Class" Guid="cb121d63-83f1-4c39-8ccf-123c848a74be" Value="Game.SubsystemGltfModelPBRShader" Type="string" />
+    <MemberSubsystemTemplate Name="ModelPbrShader" Guid="baa41341-9df2-4080-b668-dcbe2dfa9ef8" InheritanceParent="a3914c13-7801-46a6-b23a-9e2b36e9defb">
+      <Parameter Name="Class" Guid="cb121d63-83f1-4c39-8ccf-123c848a74be" Value="Game.SubsystemModelPbrShader" Type="string" />
       <Parameter Name="Dependencies" Value="ModelRenderer" Type="string" />
     </MemberSubsystemTemplate>
   </ProjectTemplate>

@@ -8,7 +8,7 @@ using Vector3 = Engine.Vector3;
 using Matrix = Engine.Matrix;
 
 namespace Game {
-    partial class GltfPbrRenderer {
+    partial class PbrRenderer {
         static Matrix GetBoneTransformForEntry(PartRenderEntry entry) {
             ComponentModel cm = entry.ModelData.ComponentModel;
             int boneIndex = entry.Mesh.ParentBone?.Index ?? 0;

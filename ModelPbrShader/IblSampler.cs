@@ -199,7 +199,7 @@ namespace Game {
         }
 
         static string LoadShaderSource(string shaderName) {
-            string path = Storage.CombinePaths("GltfModelPbrShaders", shaderName);
+            string path = Storage.CombinePaths("ModelPbrShaders", shaderName);
             System.IO.Stream stream = ContentManager.GetStream(path);
             return new System.IO.StreamReader(stream).ReadToEnd();
         }

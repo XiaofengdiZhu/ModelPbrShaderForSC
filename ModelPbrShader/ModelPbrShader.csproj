@@ -5,7 +5,7 @@
         <OutputType>Library</OutputType>
         <RootNamespace>Game</RootNamespace>
         <TargetFramework>net10.0</TargetFramework>
-        <AssemblyName>GltfModelPBRShader</AssemblyName>
+        <AssemblyName>ModelPbrShader</AssemblyName>
         <Deterministic>true</Deterministic>
         <LangVersion>preview</LangVersion>
         <EnableDefaultCompileItems>false</EnableDefaultCompileItems>

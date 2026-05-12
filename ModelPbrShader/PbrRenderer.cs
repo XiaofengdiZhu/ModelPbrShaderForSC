@@ -19,7 +19,7 @@ namespace Game {
     /// 继承 AdvancedMeshRenderer，添加 PBR 材质 UBO 和 IBL 支持
     /// 每个 mesh part 独立分类到 Opaque/Transparent/Transmission/Scatter 队列
     /// </summary>
-    public partial class GltfPbrRenderer : AdvancedMeshRenderer {
+    public partial class PbrRenderer : AdvancedMeshRenderer {
         static readonly ModelMaterial DefaultDielectricMaterial = new() {
             MetallicFactor = 0f, RoughnessFactor = 1.0f, BaseColorFactor = Vector4.One
         };
@@ -88,7 +88,7 @@ namespace Game {
             _captureSchedule = schedule;
         }
 
-        // 是否启用动态 IBL（默认 false，由 SubsystemGltfModelPBRShader 启用）
+        // 是否启用动态 IBL（默认 false，由 SubsystemModelPbrShader 启用）
         public bool DynamicIblEnabled { get; set; }
 
         public IblSampler IblSampler { get; set; }
@@ -106,7 +106,7 @@ namespace Game {
             _environmentCapture = new EnvironmentCapture();
             _environmentCapture.Initialize(subsystemTerrain, subsystemSky);
             DynamicIblEnabled = true;
-            Log.Information("[glTF PBR Shader] Dynamic IBL initialized");
+            Log.Information("[PBR Shader] Dynamic IBL initialized");
         }
 
         /// <summary>
@@ -125,7 +125,7 @@ namespace Game {
                     CachedPlayerLight = 1f
                 };
                 PlayerEnvironments[playerIndex] = data;
-                Log.Information("[glTF PBR Shader] Created player environment data for player " + playerIndex);
+                Log.Information("[PBR Shader] Created player environment data for player " + playerIndex);
             }
             return data;
         }
@@ -165,7 +165,7 @@ namespace Game {
             if (playerData.LastCaptureTime == 0) {
                 // 检查地形是否已加载（至少有一个区块）
                 if (_subsystemTerrain?.Terrain?.AllocatedChunks?.Length == 0) {
-                    Log.Information("[glTF PBR Shader] Skipping first capture - terrain not loaded");
+                    Log.Information("[PBR Shader] Skipping first capture - terrain not loaded");
                     return false;
                 }
                 result = true;
@@ -235,7 +235,7 @@ namespace Game {
                 pd.IblSampler = null;
                 pd.ScheduleFrameIndex = 0;
                 pd.Phase = CapturePhase.Idle;
-                Log.Error("[glTF PBR Shader] Capture failed: " + ex.Message + "\n" + ex.StackTrace);
+                Log.Error("[PBR Shader] Capture failed: " + ex.Message + "\n" + ex.StackTrace);
                 return;
             }
             pd.ScheduleFrameIndex++;
@@ -256,7 +256,7 @@ namespace Game {
             if (_shadersLoaded) {
                 return;
             }
-            string basePath = "GltfModelPbrShaders/pbr/";
+            string basePath = "ModelPbrShaders/pbr/";
             Dictionary<string, string> shaders = new();
             AddShader(shaders, basePath, "primitive.vert");
             AddShader(shaders, basePath, "pbr.frag");
@@ -272,7 +272,7 @@ namespace Game {
             AddShader(shaders, basePath, "iridescence.glsl");
             AddShader(shaders, basePath, "specular_glossiness.frag");
             AddShader(shaders, basePath, "scatter.frag");
-            AddShader(shaders, "GltfModelPbrShaders/", "fullscreen.vert");
+            AddShader(shaders, "ModelPbrShaders/", "fullscreen.vert");
             ShaderCache.LoadShaderSources(shaders, basePath);
             AnimationPlayer.MorphWeightAnimationEnabled = true;
             _shadersLoaded = true;

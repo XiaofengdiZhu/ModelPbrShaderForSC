@@ -5,12 +5,12 @@ using GameEntitySystem;
 using TemplatesDatabase;
 
 namespace Game {
-    public class SubsystemGltfModelPBRShader : Subsystem {
+    public class SubsystemModelPbrShader : Subsystem {
         public SubsystemModelsRenderer _subsystemModelsRenderer;
         public SubsystemTerrain _subsystemTerrain;
         public SubsystemSky _subsystemSky;
         public SubsystemPlayers _subsystemPlayers;
-        public static GltfPbrRenderer PbrRenderer { get; private set; }
+        public static PbrRenderer Renderer { get; private set; }
 
         public override void Load(ValuesDictionary valuesDictionary) {
             // 获取子系统引用
@@ -18,26 +18,26 @@ namespace Game {
             _subsystemTerrain = Project.FindSubsystem<SubsystemTerrain>();
             _subsystemSky = Project.FindSubsystem<SubsystemSky>();
             _subsystemPlayers = Project.FindSubsystem<SubsystemPlayers>();
-            if (PbrRenderer == null) {
+            if (Renderer == null) {
                 Model.LoadTexturesInSrgb = true;
                 try {
-                    PbrRenderer = new GltfPbrRenderer();
-                    PbrRenderer.EnvironmentStrength = 1.0f;
-                    Log.Information("[glTF PBR Shader] PBR renderer initialized successfully.");
+                    Renderer = new PbrRenderer();
+                    Renderer.EnvironmentStrength = 1.0f;
+                    Log.Information("[PBR Shader] Renderer initialized successfully.");
                 }
                 catch (Exception ex) {
-                    Log.Error("[glTF PBR Shader] Failed to initialize: " + ex.Message + "\n" + ex.StackTrace);
+                    Log.Error("[PBR Shader] Failed to initialize: " + ex.Message + "\n" + ex.StackTrace);
                 }
             }
-            if (PbrRenderer != null) {
-                _subsystemModelsRenderer.CustomRenderer = PbrRenderer;
+            if (Renderer != null) {
+                _subsystemModelsRenderer.CustomRenderer = Renderer;
                 _subsystemModelsRenderer.UseCustomRendering = true;
-                PbrRenderer.Initialize(_subsystemModelsRenderer);
+                Renderer.Initialize(_subsystemModelsRenderer);
 
                 // 初始化动态 IBL
                 if (_subsystemTerrain != null
                     && _subsystemSky != null) {
-                    PbrRenderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky);
+                    Renderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky);
                 }
             }
 
@@ -51,37 +51,37 @@ namespace Game {
             if (_subsystemPlayers != null) {
                 _subsystemPlayers.PlayerRemoved -= OnPlayerRemoved;
             }
-            PbrRenderer?.CelestialBodyCache.Clear();
+            Renderer?.CelestialBodyCache.Clear();
 
             // 清理所有玩家环境数据
-            int[] playerKeys = new int[PbrRenderer.PlayerEnvironments.Count];
-            PbrRenderer.PlayerEnvironments.Keys.CopyTo(playerKeys, 0);
+            int[] playerKeys = new int[Renderer.PlayerEnvironments.Count];
+            Renderer.PlayerEnvironments.Keys.CopyTo(playerKeys, 0);
             foreach (int playerIndex in playerKeys) {
-                PbrRenderer.CleanupPlayerData(playerIndex);
+                Renderer.CleanupPlayerData(playerIndex);
             }
         }
 
         void OnPlayerRemoved(PlayerData playerData) {
-            if (PbrRenderer != null
+            if (Renderer != null
                 && playerData != null) {
                 int playerIndex = playerData.PlayerIndex;
-                PbrRenderer.CleanupPlayerData(playerIndex);
-                Log.Information("[glTF PBR Shader] Cleaned up environment data for player " + playerIndex);
+                Renderer.CleanupPlayerData(playerIndex);
+                Log.Information("[PBR Shader] Cleaned up environment data for player " + playerIndex);
             }
         }
 
         public override void OnEntityRemoved(Entity entity) {
-            if (PbrRenderer == null) { return; }
+            if (Renderer == null) { return; }
             foreach (ComponentModel cm in entity.FindComponents<ComponentModel>()) {
                 SubsystemModelsRenderer.ModelData toRemove = null;
-                foreach (var kvp in PbrRenderer.CelestialBodyCache) {
+                foreach (var kvp in Renderer.CelestialBodyCache) {
                     if (kvp.Key.ComponentModel == cm) {
                         toRemove = kvp.Key;
                         break;
                     }
                 }
                 if (toRemove != null) {
-                    PbrRenderer.CelestialBodyCache.Remove(toRemove);
+                    Renderer.CelestialBodyCache.Remove(toRemove);
                 }
             }
         }

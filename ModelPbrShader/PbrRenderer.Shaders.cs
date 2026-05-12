@@ -6,7 +6,7 @@ using Engine.Media;
 using Shader = Engine.Graphics.Shader;
 
 namespace Game {
-    partial class GltfPbrRenderer {
+    partial class PbrRenderer {
         #region Shader Compilation
 
         protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, RenderContext context) =>
@@ -86,7 +86,7 @@ namespace Game {
                 return ShaderCache.GetShaderProgram(vertHash, fragHash);
             }
             catch (Exception ex) {
-                Log.Error($"GltfPbrRenderer: shader compile failed: {ex.Message}");
+                Log.Error($"PbrRenderer: shader compile failed: {ex.Message}");
                 return null;
             }
         }
