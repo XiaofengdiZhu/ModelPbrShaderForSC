@@ -22,6 +22,7 @@ namespace Game {
         public ScatterFramebuffer Scatter { get; private set; }
 
         public void SetSize(int width, int height) {
+            if (Width == width && Height == height) return;
             Width = width;
             Height = height;
         }

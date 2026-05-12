@@ -10,55 +10,49 @@ namespace Game {
         static readonly Dictionary<int, SamplerState> _appliedSamplers = new();
         static readonly Dictionary<int, int[]> _slotUniformLocations = new();
 
-        static readonly (MaterialTextureSlot slot, string texUniform, string samplerUniform)[] SlotUniforms = [
-            (MaterialTextureSlot.BaseColor, "u_BaseColorTexture", "u_BaseColorSampler"),
-            (MaterialTextureSlot.MetallicRoughness, "u_MetallicRoughnessTexture", "u_MetallicRoughnessSampler"),
-            (MaterialTextureSlot.Normal, "u_NormalTexture", "u_NormalSampler"),
-            (MaterialTextureSlot.Occlusion, "u_OcclusionTexture", "u_OcclusionSampler"),
-            (MaterialTextureSlot.Emissive, "u_EmissiveTexture", "u_EmissiveSampler"),
-            (MaterialTextureSlot.ClearCoat, "u_ClearcoatTexture", "u_ClearcoatSampler"),
-            (MaterialTextureSlot.ClearCoatRoughness, "u_ClearcoatRoughnessTexture", "u_ClearcoatRoughnessSampler"),
-            (MaterialTextureSlot.ClearCoatNormal, "u_ClearcoatNormalTexture", "u_ClearcoatNormalSampler"),
-            (MaterialTextureSlot.Iridescence, "u_IridescenceTexture", "u_IridescenceSampler"),
-            (MaterialTextureSlot.IridescenceThickness, "u_IridescenceThicknessTexture", "u_IridescenceThicknessSampler"),
-            (MaterialTextureSlot.Transmission, "u_TransmissionTexture", "u_TransmissionSampler"),
-            (MaterialTextureSlot.Thickness, "u_ThicknessTexture", "u_ThicknessSampler"),
-            (MaterialTextureSlot.SheenColor, "u_SheenColorTexture", "u_SheenColorSampler"),
-            (MaterialTextureSlot.SheenRoughness, "u_SheenRoughnessTexture", "u_SheenRoughnessSampler"),
-            (MaterialTextureSlot.Specular, "u_SpecularTexture", "u_SpecularSampler"),
-            (MaterialTextureSlot.SpecularColor, "u_SpecularColorTexture", "u_SpecularColorSampler"),
-            (MaterialTextureSlot.Anisotropy, "u_AnisotropyTexture", "u_AnisotropySampler"),
-            (MaterialTextureSlot.DiffuseTransmission, "u_DiffuseTransmissionTexture", "u_DiffuseTransmissionSampler"),
-            (MaterialTextureSlot.DiffuseTransmissionColor, "u_DiffuseTransmissionColorTexture", "u_DiffuseTransmissionColorSampler"),
-            (MaterialTextureSlot.Diffuse, "u_DiffuseTexture", "u_DiffuseSampler"),
-            (MaterialTextureSlot.SpecularGlossiness, "u_SpecularGlossinessTexture", "u_SpecularGlossinessSampler"),
-            (MaterialTextureSlot.IBLLambertian, "u_LambertianEnvTexture", "u_LambertianEnvSampler"),
-            (MaterialTextureSlot.IBLGGX, "u_GGXEnvTexture", "u_GGXEnvSampler"),
-            (MaterialTextureSlot.IBLCharlie, "u_CharlieEnvTexture", "u_CharlieEnvSampler"),
-            (MaterialTextureSlot.IBLGGXLUT, "u_GGXLUT", "u_GGXLUTSampler"),
-            (MaterialTextureSlot.IBLCharlieLUT, "u_CharlieLUT", "u_CharlieLUTSampler")
+        static readonly (MaterialTextureSlot slot, string samplerUniform)[] SlotUniforms = [
+            (MaterialTextureSlot.BaseColor, "u_BaseColorSampler"),
+            (MaterialTextureSlot.MetallicRoughness, "u_MetallicRoughnessSampler"),
+            (MaterialTextureSlot.Normal, "u_NormalSampler"),
+            (MaterialTextureSlot.Occlusion, "u_OcclusionSampler"),
+            (MaterialTextureSlot.Emissive, "u_EmissiveSampler"),
+            (MaterialTextureSlot.ClearCoat, "u_ClearcoatSampler"),
+            (MaterialTextureSlot.ClearCoatRoughness, "u_ClearcoatRoughnessSampler"),
+            (MaterialTextureSlot.ClearCoatNormal, "u_ClearcoatNormalSampler"),
+            (MaterialTextureSlot.Iridescence, "u_IridescenceSampler"),
+            (MaterialTextureSlot.IridescenceThickness, "u_IridescenceThicknessSampler"),
+            (MaterialTextureSlot.Transmission, "u_TransmissionSampler"),
+            (MaterialTextureSlot.Thickness, "u_ThicknessSampler"),
+            (MaterialTextureSlot.SheenColor, "u_SheenColorSampler"),
+            (MaterialTextureSlot.SheenRoughness, "u_SheenRoughnessSampler"),
+            (MaterialTextureSlot.Specular, "u_SpecularSampler"),
+            (MaterialTextureSlot.SpecularColor, "u_SpecularColorSampler"),
+            (MaterialTextureSlot.Anisotropy, "u_AnisotropySampler"),
+            (MaterialTextureSlot.DiffuseTransmission, "u_DiffuseTransmissionSampler"),
+            (MaterialTextureSlot.DiffuseTransmissionColor, "u_DiffuseTransmissionColorSampler"),
+            (MaterialTextureSlot.Diffuse, "u_DiffuseSampler"),
+            (MaterialTextureSlot.SpecularGlossiness, "u_SpecularGlossinessSampler"),
+            (MaterialTextureSlot.IBLLambertian, "u_LambertianEnvSampler"),
+            (MaterialTextureSlot.IBLGGX, "u_GGXEnvSampler"),
+            (MaterialTextureSlot.IBLCharlie, "u_CharlieEnvSampler"),
+            (MaterialTextureSlot.IBLGGXLUT, "u_GGXLUT"),
+            (MaterialTextureSlot.IBLCharlieLUT, "u_CharlieLUT")
         ];
 
         public static void SetTextureSlotUniforms(Shader shader) {
             int programHandle = shader.m_program;
             if (!_slotUniformLocations.TryGetValue(programHandle, out int[] locations)) {
                 uint program = (uint)programHandle;
-                locations = new int[SlotUniforms.Length * 2];
+                locations = new int[SlotUniforms.Length];
                 for (int i = 0; i < SlotUniforms.Length; i++) {
-                    locations[i * 2] = GLWrapper.GL.GetUniformLocation(program, SlotUniforms[i].texUniform);
-                    locations[i * 2 + 1] = GLWrapper.GL.GetUniformLocation(program, SlotUniforms[i].samplerUniform);
+                    locations[i] = GLWrapper.GL.GetUniformLocation(program, SlotUniforms[i].samplerUniform);
                 }
                 _slotUniformLocations[programHandle] = locations;
             }
             for (int i = 0; i < SlotUniforms.Length; i++) {
-                int slotValue = (int)SlotUniforms[i].slot;
-                int texLoc = locations[i * 2];
-                if (texLoc >= 0) {
-                    GLWrapper.GL.Uniform1(texLoc, slotValue);
-                }
-                int samplerLoc = locations[i * 2 + 1];
-                if (samplerLoc >= 0) {
-                    GLWrapper.GL.Uniform1(samplerLoc, slotValue);
+                int loc = locations[i];
+                if (loc >= 0) {
+                    GLWrapper.GL.Uniform1(loc, (int)SlotUniforms[i].slot);
                 }
             }
         }
