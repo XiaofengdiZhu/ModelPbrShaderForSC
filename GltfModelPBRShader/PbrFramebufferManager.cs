@@ -64,11 +64,18 @@ namespace Game {
             if (Transmission == null) {
                 return;
             }
+            BindTransmission();
             GLWrapper.ClearColor(new Engine.Vector4(0f, 0f, 0f, 1f));
             GLWrapper.GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         }
 
-        public void ClearScatter() => Scatter?.ClearTransparent();
+        public void ClearScatter() {
+            if (Scatter == null) {
+                return;
+            }
+            BindScatter();
+            Scatter.ClearTransparent();
+        }
 
         public void GenerateTransmissionMipmap() {
             if (Transmission == null) {

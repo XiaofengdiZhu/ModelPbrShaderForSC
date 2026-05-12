@@ -20,16 +20,12 @@ namespace Game {
             GLWrapper.GL.GenTextures(1, out uint depthTex);
             DepthTextureHandle = (int)depthTex;
             GLWrapper.BindTexture(TextureTarget.Texture2D, DepthTextureHandle, true);
-            GLWrapper.GL.TexImage2D(
+            GLWrapper.GL.TexStorage2D(
                 TextureTarget.Texture2D,
-                0,
-                InternalFormat.DepthComponent24,
+                1,
+                SizedInternalFormat.DepthComponent24,
                 (uint)Width,
-                (uint)Height,
-                0,
-                PixelFormat.DepthComponent,
-                PixelType.UnsignedInt,
-                null
+                (uint)Height
             );
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);

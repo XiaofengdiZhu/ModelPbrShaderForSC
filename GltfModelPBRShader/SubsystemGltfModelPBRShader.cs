@@ -67,5 +67,21 @@ namespace Game {
                 Log.Information($"[glTF PBR Shader] Cleaned up environment data for player {playerIndex}");
             }
         }
+
+        public override void OnEntityRemoved(Entity entity) {
+            if (PbrRenderer == null) { return; }
+            foreach (ComponentModel cm in entity.FindComponents<ComponentModel>()) {
+                SubsystemModelsRenderer.ModelData toRemove = null;
+                foreach (var kvp in PbrRenderer.CelestialBodyCache) {
+                    if (kvp.Key.ComponentModel == cm) {
+                        toRemove = kvp.Key;
+                        break;
+                    }
+                }
+                if (toRemove != null) {
+                    PbrRenderer.CelestialBodyCache.Remove(toRemove);
+                }
+            }
+        }
     }
 }
