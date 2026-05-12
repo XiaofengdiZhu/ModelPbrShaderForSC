@@ -8,6 +8,7 @@ namespace Game {
     /// 存储玩家的 IBL 采样器、全景图渲染目标和光照缓存
     /// </summary>
     public class PlayerEnvironmentData : IDisposable {
+        bool _disposed;
         /// <summary>
         /// 上次捕获位置
         /// </summary>
@@ -57,6 +58,11 @@ namespace Game {
         /// 释放所有资源
         /// </summary>
         public void Dispose() {
+            if (_disposed) {
+                return;
+            }
+            _disposed = true;
+            GC.SuppressFinalize(this);
             IblSampler?.Dispose();
             IblSampler = null;
             PanoramaRenderTarget?.Dispose();

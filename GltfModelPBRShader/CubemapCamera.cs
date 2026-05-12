@@ -25,13 +25,16 @@ namespace Game {
         public override Matrix ScreenProjectionMatrix => _projectionMatrix;
         public override Matrix InvertedProjectionMatrix => Matrix.Invert(_projectionMatrix);
         public override Matrix ViewProjectionMatrix => _viewMatrix * _projectionMatrix;
-        public override Vector2 ViewportSize { get; }
+        Vector2 _viewportSize = new(256, 256);
+        public override Vector2 ViewportSize => _viewportSize;
         public override Matrix ViewportMatrix => Matrix.Identity;
         public override BoundingFrustum ViewFrustum => _viewFrustum;
         public override bool UsesMovementControls => false;
         public override bool IsEntityControlEnabled => false;
 
-        public CubemapCamera(GameWidget gameWidget) : base(gameWidget) => ViewportSize = new Vector2(256, 256);
+        public CubemapCamera(GameWidget gameWidget) : base(gameWidget) { }
+
+        public void SetFaceSize(int size) => _viewportSize = new Vector2(size, size);
 
         /// <summary>
         /// 设置相机朝向 Cubemap 的某个面

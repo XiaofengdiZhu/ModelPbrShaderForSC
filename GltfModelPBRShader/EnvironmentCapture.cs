@@ -48,6 +48,7 @@ namespace Game {
             }
             _camera ??= new CubemapCamera(gameWidget);
             _camera.GameWidget = gameWidget;
+            _camera.SetFaceSize(faceSize);
             EnsureCubemapResources(faceSize);
             _capturePosition = capturePosition;
             _captureFarPlane = captureFarPlane;

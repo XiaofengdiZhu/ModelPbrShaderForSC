@@ -35,6 +35,7 @@ namespace Game {
         readonly List<PartRenderEntry> _allTransparentEntries = [];
         readonly PbrFramebufferManager _framebufferManager = new();
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> _instanceGroups = new();
+        readonly List<List<PartRenderEntry>> _listPool = [];
         readonly Dictionary<Model, JointTexture> _jointTextures = new();
 
         // PBR 材质 UBO
@@ -57,7 +58,6 @@ namespace Game {
         readonly List<PartRenderEntry> _transparentBeforeWater = [];
         readonly UniformBuffer<VolumeScatterData> _volumeScatterUBO = new(5);
         List<SubsystemModelsRenderer.ModelData> _allModels;
-        Shader _currentInstanceShader;
         bool _hasTransmissionThisFrame;
         bool _shadersLoaded;
 
@@ -602,7 +602,6 @@ namespace Game {
             if (shader == null) {
                 return;
             }
-            _currentInstanceShader = shader;
             shader.PrepareForDrawing();
             GLWrapper.UseProgram(shader.m_program);
             SetPerFrameUniforms(shader, entry.ModelData);
@@ -662,6 +661,10 @@ namespace Game {
             }
 
             // 非蒙皮：按 (Mesh, Material, TextureOverride) 分组实例化渲染
+            foreach (List<PartRenderEntry> poolList in _instanceGroups.Values) {
+                poolList.Clear();
+                _listPool.Add(poolList);
+            }
             _instanceGroups.Clear();
             foreach (PartRenderEntry e in _opaqueEntries) {
                 if (e.ModelData.ComponentModel.Model?.HasSkin == true) {
@@ -669,11 +672,17 @@ namespace Game {
                 }
                 (ModelMesh, ModelMaterial, Texture2D) key = (e.Mesh, e.Material, e.TextureOverride);
                 if (!_instanceGroups.TryGetValue(key, out List<PartRenderEntry> list)) {
-                    list = [];
+                    if (_listPool.Count > 0) {
+                        list = _listPool[^1];
+                        _listPool.RemoveAt(_listPool.Count - 1);
+                    } else {
+                        list = new List<PartRenderEntry>();
+                    }
                     _instanceGroups[key] = list;
                 }
                 list.Add(e);
             }
+            UpdateLightsUBO(1f);
             foreach (KeyValuePair<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> kvp in _instanceGroups) {
                 (ModelMesh mesh, ModelMaterial material, Texture2D textureOverride) = kvp.Key;
                 List<PartRenderEntry> groupEntries = kvp.Value;
@@ -705,12 +714,10 @@ namespace Game {
                 if (shader == null) {
                     continue;
                 }
-                _currentInstanceShader = shader;
                 shader.PrepareForDrawing();
                 GLWrapper.UseProgram(shader.m_program);
                 SetPerFrameUniformsBatch(shader);
                 UpdateRenderStateUBOForInstancing();
-                UpdateLightsUBO(1f);
                 UpdateMaterialUBOs(effectiveMaterial, false);
                 UpdateUVTransformUBO(effectiveMaterial);
                 Model model = groupEntries[0].ModelData.ComponentModel.Model;
@@ -774,7 +781,7 @@ namespace Game {
                             }
                         }
                         if (posCount > 0) {
-                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
+                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false, shader);
                         }
                         if (negCount > 0) {
                             for (int i = 0; i < negCount; i++) {
@@ -782,7 +789,7 @@ namespace Game {
                                 _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
                                 _instanceIblStrengthData[i] = _instanceIblStrengthData[MaxInstancesPerBatch - 1 - i];
                             }
-                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
+                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true, shader);
                         }
                     }
                 }
@@ -811,7 +818,7 @@ namespace Game {
                             }
                         }
                         if (posCount > 0) {
-                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false);
+                            DrawInstanceBatch(mesh, effectiveMaterial, posCount, false, shader);
                         }
                         if (negCount > 0) {
                             for (int i = 0; i < negCount; i++) {
@@ -819,7 +826,7 @@ namespace Game {
                                 _instanceLightData[i] = _instanceLightData[MaxInstancesPerBatch - 1 - i];
                                 _instanceIblStrengthData[i] = _instanceIblStrengthData[MaxInstancesPerBatch - 1 - i];
                             }
-                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true);
+                            DrawInstanceBatch(mesh, effectiveMaterial, negCount, true, shader);
                         }
                     }
                 }
@@ -831,7 +838,7 @@ namespace Game {
             }
         }
 
-        void DrawInstanceBatch(ModelMesh mesh, ModelMaterial material, int count, bool isNegativeScale) {
+        void DrawInstanceBatch(ModelMesh mesh, ModelMaterial material, int count, bool isNegativeScale, Shader shader) {
             UploadInstanceData(_instanceMatrices, count);
             UploadInstanceLightData(_instanceLightData, count);
             UploadInstanceIblStrengthData(_instanceIblStrengthData, count);
@@ -839,8 +846,8 @@ namespace Game {
             SetupDepthState(material);
             SetupCullMode(material, isNegativeScale);
             SetupBlendMode(material, CurrentContext);
-            SetupTransmissionUniforms(material, _currentInstanceShader);
-            SetupVolumeScatterUniforms(material, _currentInstanceShader);
+            SetupTransmissionUniforms(material, shader);
+            SetupVolumeScatterUniforms(material, shader);
             DrawMeshInstanced(mesh, count);
             DisableInstanceAttributes();
         }

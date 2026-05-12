@@ -54,6 +54,7 @@ namespace Game {
         int _instanceLightVBO;
         int _instanceIblStrengthVBO;
         protected Matrix4x4[] _instanceMatrices = new Matrix4x4[MaxInstancesPerBatch];
+        Texture2D[] _cachedTextureArray;
 
         // 实例化渲染
         int _instanceVBO;
@@ -371,7 +372,11 @@ namespace Game {
             if (textureCount == 0) {
                 return;
             }
-            Texture2D[] textures = new Texture2D[textureCount];
+            Texture2D[] textures = _cachedTextureArray;
+            if (textures == null || textures.Length < textureCount) {
+                textures = new Texture2D[textureCount];
+                _cachedTextureArray = textures;
+            }
             for (int i = 0; i < textureCount; i++) {
                 textures[i] = model.GetTexture(i);
             }

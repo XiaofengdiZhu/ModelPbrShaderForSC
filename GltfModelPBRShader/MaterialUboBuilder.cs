@@ -245,19 +245,19 @@ namespace Game {
                 return TextureFlags.None;
             }
             TextureFlags flags = TextureFlags.None;
-            if (material.BaseColorTexture != null) {
+            if (material.BaseColorTexture?.HasTexture == true) {
                 flags |= TextureFlags.BaseColor;
             }
-            if (material.MetallicRoughnessTexture != null) {
+            if (material.MetallicRoughnessTexture?.HasTexture == true) {
                 flags |= TextureFlags.MetallicRoughness;
             }
-            if (material.NormalTexture != null) {
+            if (material.NormalTexture?.HasTexture == true) {
                 flags |= TextureFlags.Normal;
             }
-            if (material.OcclusionTexture != null) {
+            if (material.OcclusionTexture?.HasTexture == true) {
                 flags |= TextureFlags.Occlusion;
             }
-            if (material.EmissiveTexture != null) {
+            if (material.EmissiveTexture?.HasTexture == true) {
                 flags |= TextureFlags.Emissive;
             }
             if (material.ClearCoat?.IsEnabled == true) {
