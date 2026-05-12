@@ -152,7 +152,7 @@ void main()
 
         vec3 dielectric_fresnel = F_Schlick(materialInfo.f0_dielectric * materialInfo.specularWeight, materialInfo.f90_dielectric, abs(VdotH));
 
-        vec3 lightIntensity = getLighIntensity(light, pointToLight);
+        vec3 lightIntensity = getLightIntensity(light, pointToLight);
 
         vec3 l_diffuse = vec3(0.0);
         vec3 l_specular_dielectric = vec3(0.0);

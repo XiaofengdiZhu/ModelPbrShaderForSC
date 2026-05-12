@@ -54,7 +54,9 @@ namespace Game {
             PbrRenderer?.CelestialBodyCache.Clear();
 
             // 清理所有玩家环境数据
-            foreach (int playerIndex in PbrRenderer.PlayerEnvironments.Keys) {
+            int[] playerKeys = new int[PbrRenderer.PlayerEnvironments.Count];
+            PbrRenderer.PlayerEnvironments.Keys.CopyTo(playerKeys, 0);
+            foreach (int playerIndex in playerKeys) {
                 PbrRenderer.CleanupPlayerData(playerIndex);
             }
         }

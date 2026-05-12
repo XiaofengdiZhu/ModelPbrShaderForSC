@@ -141,6 +141,7 @@ void main()
     float albedoSheenScaling = 1.0;
     float diffuseTransmissionThickness = 1.0;
     vec3 diffuseTransmissionIBL = vec3(0.0);
+    float ao = 1.0;
 
     #ifdef MATERIAL_IRIDESCENCE
     vec3 iridescenceFresnel_dielectric = evalIridescence(1.0, materialInfo.iridescenceIor, NdotV, materialInfo.iridescenceThickness, materialInfo.f0_dielectric);
@@ -240,7 +241,6 @@ void main()
         color = mix(color, clearcoat_brdf, clearcoatFactor * clearcoatFresnel);
 
     #ifdef HAS_OCCLUSION_MAP
-        float ao = 1.0;
         ao = texture(u_OcclusionSampler, getOcclusionUV()).r;
         color = color * (1.0 + u_OcclusionStrength * (ao - 1.0));
     #endif
@@ -314,7 +314,7 @@ void main()
         vec3 dielectric_fresnel = F_Schlick(materialInfo.f0_dielectric * materialInfo.specularWeight, materialInfo.f90_dielectric, abs(VdotH));
         vec3 metal_fresnel = F_Schlick(baseColor.rgb, vec3(1.0), abs(VdotH));
 
-        vec3 lightIntensity = getLighIntensity(light, pointToLight);
+        vec3 lightIntensity = getLightIntensity(light, pointToLight);
         // Only apply celestial body visibility to directional lights (sun/moon),
         // not to glTF model punctual lights
         if (light.type == LightType_Directional) {
@@ -376,7 +376,7 @@ void main()
 
         // Calculation of analytical light
         // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
-        vec3 intensity = getLighIntensity(light, pointToLight);
+        vec3 intensity = getLightIntensity(light, pointToLight);
         if (light.type == LightType_Directional) {
 #ifdef USE_INSTANCING
             intensity *= v_instanceLight.x;

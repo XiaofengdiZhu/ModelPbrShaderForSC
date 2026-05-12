@@ -32,6 +32,7 @@ void main()
     baseColor.a = 1.0;
     #endif
     vec3 color = vec3(0);
+    float ao = 1.0;
 
     vec3 v = normalize(u_Camera - v_Position);
     NormalInfo normalInfo = getNormalInfo(v);
@@ -86,7 +87,6 @@ void main()
     color = f_dielectric_brdf_ibl;
 
     #ifdef HAS_OCCLUSION_MAP
-    float ao = 1.0;
     ao = texture(u_OcclusionSampler, getOcclusionUV()).r;
     color = color * (1.0 + u_OcclusionStrength * (ao - 1.0));
     #endif
@@ -118,13 +118,13 @@ void main()
 
         vec3 dielectric_fresnel = F_Schlick(materialInfo.f0_dielectric, materialInfo.f90_dielectric, abs(VdotH));
 
-        vec3 lightIntensity = getLighIntensity(light, pointToLight);
+        vec3 lightIntensity = getLightIntensity(light, pointToLight);
 
         vec3 l_diffuse = lightIntensity * NdotL * BRDF_lambertian(baseColor.rgb);
 
         // Calculation of analytical light
         // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
-        vec3 intensity = getLighIntensity(light, pointToLight);
+        vec3 intensity = getLightIntensity(light, pointToLight);
 
 
         vec3 l_specular_dielectric = intensity * NdotL * BRDF_specularGGX(materialInfo.alphaRoughness, NdotL, NdotV, NdotH);

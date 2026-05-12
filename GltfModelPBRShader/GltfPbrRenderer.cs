@@ -193,12 +193,21 @@ namespace Game {
                         Math.Min(_subsystemSky.VisibilityRange, CaptureMaxVisibilityRange)
                     );
                 }
-                List<CaptureStep> faceSteps = steps.Where(s => s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5).ToList();
-                if (faceSteps.Count > 0) {
+                int faceCount = 0;
+                for (int i = 0; i < steps.Count; i++) {
+                    CaptureStep s = steps[i];
+                    if (s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5) {
+                        faceCount++;
+                    }
+                }
+                if (faceCount > 0) {
                     _environmentCapture.BeginFaceGroup();
                     try {
-                        foreach (CaptureStep step in faceSteps) {
-                            _environmentCapture.CaptureFace(step - CaptureStep.CaptureFace0);
+                        for (int i = 0; i < steps.Count; i++) {
+                            CaptureStep s = steps[i];
+                            if (s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5) {
+                                _environmentCapture.CaptureFace(s - CaptureStep.CaptureFace0);
+                            }
                         }
                     }
                     finally {
