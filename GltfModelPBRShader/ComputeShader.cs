@@ -101,7 +101,7 @@ namespace Game {
         }
 
         public static void MemoryBarrier() {
-            GLWrapper.GL.MemoryBarrier((uint)MemoryBarrierMask.ShaderImageAccessBarrierBit);
+            GLWrapper.GL.MemoryBarrier((uint)(MemoryBarrierMask.ShaderImageAccessBarrierBit | MemoryBarrierMask.TextureFetchBarrierBit));
         }
 
         public void Dispose() {

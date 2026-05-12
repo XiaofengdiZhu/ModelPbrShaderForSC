@@ -64,6 +64,7 @@ namespace Game {
         }
 
         public void BindDepthTexture(TextureUnit unit) {
+            if (DepthTextureHandle == 0) return;
             GLWrapper.ActiveTexture(unit);
             GLWrapper.BindTexture(TextureTarget.Texture2D, DepthTextureHandle, true);
         }

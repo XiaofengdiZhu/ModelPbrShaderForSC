@@ -125,7 +125,7 @@ namespace Game {
                     CachedPlayerLight = 1f
                 };
                 PlayerEnvironments[playerIndex] = data;
-                Log.Information($"[glTF PBR Shader] Created player environment data for player {playerIndex}");
+                Log.Information("[glTF PBR Shader] Created player environment data for player " + playerIndex);
             }
             return data;
         }
@@ -233,8 +233,9 @@ namespace Game {
             catch (Exception ex) {
                 pd.IblSampler?.Dispose();
                 pd.IblSampler = null;
+                pd.ScheduleFrameIndex = 0;
                 pd.Phase = CapturePhase.Idle;
-                Log.Error($"[glTF PBR Shader] Capture failed: {ex.Message}\n{ex.StackTrace}");
+                Log.Error("[glTF PBR Shader] Capture failed: " + ex.Message + "\n" + ex.StackTrace);
                 return;
             }
             pd.ScheduleFrameIndex++;
@@ -430,6 +431,12 @@ namespace Game {
                 jt.Dispose();
             }
             _jointTextures.Clear();
+            foreach (PlayerEnvironmentData pd in PlayerEnvironments.Values) {
+                pd.Dispose();
+            }
+            PlayerEnvironments.Clear();
+            _environmentCapture?.Dispose();
+            _environmentCapture = null;
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
             _volumeScatterUBO?.Dispose();
@@ -745,6 +752,8 @@ namespace Game {
                     BindIBLTextures();
                 }
                 // 检测 glTF EXT_mesh_gpu_instancing（用 entry 的 Part 而非 mesh.MeshParts[0]）
+                // 注意：morph targets 只使用第一个 entry 的数据。
+                // 同组实例通常共享 morph 配置（相同模型的多份摆放），不同 morph weight 的场景需走单实例路径。
                 ModelMeshPart firstPart = groupEntries[0].Part;
                 SetupMorphTargets(firstPart, shader);
                 bool hasGltfInstancing = firstPart != null && firstPart.InstanceCount > 0 && firstPart.InstanceMatrices != null;

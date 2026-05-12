@@ -25,6 +25,14 @@ namespace Game {
             if (Width == width && Height == height) return;
             Width = width;
             Height = height;
+            if (Transmission != null && (Width != Transmission.Width || Height != Transmission.Height)) {
+                Transmission.Dispose();
+                Transmission = null;
+            }
+            if (Scatter != null && (Width != Scatter.Width || Height != Scatter.Height)) {
+                Scatter.Dispose();
+                Scatter = null;
+            }
         }
 
         public void EnsureTransmissionFramebuffer() {

@@ -26,7 +26,7 @@ namespace Game {
                     Log.Information("[glTF PBR Shader] PBR renderer initialized successfully.");
                 }
                 catch (Exception ex) {
-                    Log.Error($"[glTF PBR Shader] Failed to initialize: {ex.Message}\n{ex.StackTrace}");
+                    Log.Error("[glTF PBR Shader] Failed to initialize: " + ex.Message + "\n" + ex.StackTrace);
                 }
             }
             if (PbrRenderer != null) {
@@ -66,7 +66,7 @@ namespace Game {
                 && playerData != null) {
                 int playerIndex = playerData.PlayerIndex;
                 PbrRenderer.CleanupPlayerData(playerIndex);
-                Log.Information($"[glTF PBR Shader] Cleaned up environment data for player {playerIndex}");
+                Log.Information("[glTF PBR Shader] Cleaned up environment data for player " + playerIndex);
             }
         }
 
