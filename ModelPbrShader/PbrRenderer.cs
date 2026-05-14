@@ -63,7 +63,6 @@ namespace Game {
 
         // 动态 IBL：每玩家环境数据
         public readonly Dictionary<int, PlayerEnvironmentData> PlayerEnvironments = new();
-        EnvironmentCapture _environmentCapture;
         PlayerEnvironmentData _currentPlayerData;
 
         // 捕获常量
@@ -103,8 +102,6 @@ namespace Game {
         /// <param name="subsystemTerrain">地形子系统</param>
         /// <param name="subsystemSky">天空子系统</param>
         public void InitializeDynamicIbl(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky) {
-            _environmentCapture = new EnvironmentCapture();
-            _environmentCapture.Initialize(subsystemTerrain, subsystemSky);
             DynamicIblEnabled = true;
             Log.Information("[PBR Shader] Dynamic IBL initialized");
         }
@@ -124,6 +121,10 @@ namespace Game {
                     LastCaptureTime = 0,
                     CachedPlayerLight = 1f
                 };
+                if (DynamicIblEnabled) {
+                    data.EnvironmentCapture = new EnvironmentCapture();
+                    data.EnvironmentCapture.Initialize(_subsystemTerrain, _subsystemSky);
+                }
                 PlayerEnvironments[playerIndex] = data;
                 Log.Information("[PBR Shader] Created player environment data for player " + playerIndex);
             }
@@ -182,11 +183,17 @@ namespace Game {
         }
 
         void AdvanceCapture(PlayerEnvironmentData pd) {
+            EnvironmentCapture capture = pd.EnvironmentCapture;
+            if (capture == null) {
+                pd.Phase = CapturePhase.Idle;
+                pd.ScheduleFrameIndex = 0;
+                return;
+            }
             List<List<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
             List<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
             try {
                 if (steps.Contains(CaptureStep.PrepareCapture)) {
-                    _environmentCapture.PrepareCapture(
+                    capture.PrepareCapture(
                         _camera.GameWidget,
                         pd.PendingCapturePosition,
                         EnvironmentMapFaceSize,
@@ -201,21 +208,21 @@ namespace Game {
                     }
                 }
                 if (faceCount > 0) {
-                    _environmentCapture.BeginFaceGroup();
+                    capture.BeginFaceGroup();
                     try {
                         for (int i = 0; i < steps.Count; i++) {
                             CaptureStep s = steps[i];
                             if (s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5) {
-                                _environmentCapture.CaptureFace(s - CaptureStep.CaptureFace0);
+                                capture.CaptureFace(s - CaptureStep.CaptureFace0);
                             }
                         }
                     }
                     finally {
-                        _environmentCapture.EndFaceGroup();
+                        capture.EndFaceGroup();
                     }
                 }
                 if (steps.Contains(CaptureStep.FinalizeCapture)) {
-                    CubemapTexture cubemap = _environmentCapture.FinalizeCapture();
+                    CubemapTexture cubemap = capture.FinalizeCapture();
                     pd.IblSampler ??= new IblSampler();
                     pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
                 }
@@ -435,8 +442,6 @@ namespace Game {
                 pd.Dispose();
             }
             PlayerEnvironments.Clear();
-            _environmentCapture?.Dispose();
-            _environmentCapture = null;
             _materialCoreUBO?.Dispose();
             _materialExtUBO?.Dispose();
             _volumeScatterUBO?.Dispose();
@@ -457,7 +462,7 @@ namespace Game {
             _allModels = allModels;
 
             // 动态 IBL：获取当前玩家数据并触发捕获
-            if (DynamicIblEnabled && _environmentCapture != null) {
+            if (DynamicIblEnabled) {
                 _currentPlayerData = GetOrCreatePlayerData(camera);
                 Vector3 capturePosition = camera.ViewPosition;
 

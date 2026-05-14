@@ -44,6 +44,7 @@ namespace Game {
 
         public void PrepareCapture(GameWidget gameWidget, Vector3 capturePosition, int faceSize, float captureFarPlane) {
             if (_terrainRenderer == null) {
+                _captureChunks = null;
                 return;
             }
             _camera ??= new CubemapCamera(gameWidget);
@@ -68,6 +69,9 @@ namespace Game {
         }
 
         public void CaptureFace(int face) {
+            if (_captureChunks == null) {
+                return;
+            }
             _cubemapRenderTarget.BindFace(face);
             GLWrapper.m_framebuffer = -1;
             Display.Viewport = _cubemapViewport;

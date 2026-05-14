@@ -10,6 +10,11 @@ namespace Game {
     public class PlayerEnvironmentData : IDisposable {
         bool _disposed;
         /// <summary>
+        /// 每玩家独立的环境捕获实例
+        /// </summary>
+        public EnvironmentCapture EnvironmentCapture;
+
+        /// <summary>
         /// 上次捕获位置
         /// </summary>
         public Vector3 LastCapturePosition;
@@ -67,6 +72,8 @@ namespace Game {
             IblSampler = null;
             PanoramaRenderTarget?.Dispose();
             PanoramaRenderTarget = null;
+            EnvironmentCapture?.Dispose();
+            EnvironmentCapture = null;
         }
     }
 }
