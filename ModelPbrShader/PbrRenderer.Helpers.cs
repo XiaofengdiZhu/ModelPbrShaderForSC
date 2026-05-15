@@ -34,7 +34,7 @@ namespace Game {
             if (model.Skin == null) {
                 return null;
             }
-            int jointCount = Math.Min(model.Skin.JointCount, SubsystemModelsRenderer.MaxJointsCount);
+            int jointCount = model.Skin.JointCount;
             if (!_jointTextures.TryGetValue(model, out JointTexture tex)
                 || tex.MaxJointCount < jointCount) {
                 tex?.Dispose();

@@ -37,6 +37,7 @@ namespace Game {
         readonly Dictionary<(ModelMesh, ModelMaterial, Texture2D), List<PartRenderEntry>> _instanceGroups = new();
         readonly List<List<PartRenderEntry>> _listPool = [];
         readonly Dictionary<Model, JointTexture> _jointTextures = new();
+        readonly Matrix[] _jointMatricesBuffer = new Matrix[1024];
 
         // PBR 材质 UBO
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
@@ -606,10 +607,9 @@ namespace Game {
             int jointCount = 0;
             if (hasSkin) {
                 jointTex = GetOrCreateJointTexture(model);
-                SubsystemModelsRenderer smr = _subsystemModelsRenderer;
                 Matrix invertedView = _camera.InvertedViewMatrix;
-                jointCount = smr.CalculateJointMatrices(cm, model, invertedView, smr.m_jointMatricesBuffer);
-                jointTex.Update(smr.m_jointMatricesBuffer.AsSpan(0, jointCount));
+                jointCount = SubsystemModelsRenderer.CalculateJointMatrices(cm, model, invertedView, _jointMatricesBuffer);
+                jointTex.Update(_jointMatricesBuffer.AsSpan(0, jointCount));
             }
             ModelMaterial effectiveMaterial = GetEffectiveMaterial(entry);
             SetHasPunctualLight(GetCelestialBodyVisible(entry.ModelData) || _collectedLights.Count > 0);
