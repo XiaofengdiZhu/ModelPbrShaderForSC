@@ -35,34 +35,7 @@
         <Compile Include="*.cs" />
     </ItemGroup>
     <ItemGroup>
-      <Reference Include="Engine">
-        <HintPath>..\..\SurvivalcraftApi\Engine\bin\Debug\net10.0\Engine.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="EntitySystem">
-        <HintPath>..\..\SurvivalcraftApi\EntitySystem\bin\Debug\net10.0\EntitySystem.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="Survivalcraft">
-        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\Survivalcraft.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="0Harmony">
-        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\0Harmony.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="Silk.NET.OpenGLES">
-        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\Silk.NET.OpenGLES.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="Silk.NET.Core">
-        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\Silk.NET.Core.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
-      <Reference Include="SixLabors.ImageSharp">
-        <HintPath>..\..\SurvivalcraftApi\Survivalcraft\bin\Debug\net10.0\SixLabors.ImageSharp.dll</HintPath>
-          <Private>false</Private>
-      </Reference>
+        <PackageReference Include="SurvivalcraftAPI.Survivalcraft" Version="1.9.1" />
     </ItemGroup>
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">
         <PropertyGroup>
