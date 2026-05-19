@@ -192,53 +192,51 @@ namespace Game {
             }
             List<List<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
             List<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
+            bool inFaceGroup = false;
             try {
-                if (steps.Contains(CaptureStep.PrepareCapture)) {
-                    capture.PrepareCapture(
-                        _camera.GameWidget,
-                        pd.PendingCapturePosition,
-                        EnvironmentMapFaceSize,
-                        Math.Min(_subsystemSky.VisibilityRange, CaptureMaxVisibilityRange)
-                    );
-                }
-                int faceCount = 0;
-                for (int i = 0; i < steps.Count; i++) {
-                    CaptureStep s = steps[i];
-                    if (s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5) {
-                        faceCount++;
+                foreach (CaptureStep step in steps) {
+                    bool isFace = step >= CaptureStep.CaptureFace0 && step <= CaptureStep.CaptureFace5;
+                    if (isFace) {
+                        if (!inFaceGroup) {
+                            capture.BeginFaceGroup();
+                            inFaceGroup = true;
+                        }
+                        capture.CaptureFace(step - CaptureStep.CaptureFace0);
                     }
-                }
-                if (faceCount > 0) {
-                    capture.BeginFaceGroup();
-                    try {
-                        for (int i = 0; i < steps.Count; i++) {
-                            CaptureStep s = steps[i];
-                            if (s >= CaptureStep.CaptureFace0 && s <= CaptureStep.CaptureFace5) {
-                                capture.CaptureFace(s - CaptureStep.CaptureFace0);
+                    else {
+                        if (inFaceGroup) {
+                            capture.EndFaceGroup();
+                            inFaceGroup = false;
+                        }
+                        switch (step) {
+                            case CaptureStep.PrepareCapture:
+                                capture.PrepareCapture(
+                                    _camera.GameWidget,
+                                    pd.PendingCapturePosition,
+                                    EnvironmentMapFaceSize,
+                                    Math.Min(_subsystemSky.VisibilityRange, CaptureMaxVisibilityRange)
+                                ); break;
+                            case CaptureStep.FinalizeCapture: {
+                                CubemapTexture cubemap = capture.FinalizeCapture();
+                                pd.IblSampler ??= new IblSampler();
+                                pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
+                                break;
                             }
+                            case CaptureStep.FilterLambertian: pd.IblSampler.ProcessLambertian(); break;
+                            case CaptureStep.FilterGGX: pd.IblSampler.ProcessGGX(); break;
+                            case CaptureStep.FilterSheen:
+                                pd.IblSampler.ProcessSheen();
+                                pd.MipCount = pd.IblSampler.MipCount;
+                                break;
                         }
                     }
-                    finally {
-                        capture.EndFaceGroup();
-                    }
                 }
-                if (steps.Contains(CaptureStep.FinalizeCapture)) {
-                    CubemapTexture cubemap = capture.FinalizeCapture();
-                    pd.IblSampler ??= new IblSampler();
-                    pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
-                }
-                foreach (CaptureStep step in steps) {
-                    switch (step) {
-                        case CaptureStep.FilterLambertian: pd.IblSampler.ProcessLambertian(); break;
-                        case CaptureStep.FilterGGX: pd.IblSampler.ProcessGGX(); break;
-                        case CaptureStep.FilterSheen:
-                            pd.IblSampler.ProcessSheen();
-                            pd.MipCount = pd.IblSampler.MipCount;
-                            break;
-                    }
+                if (inFaceGroup) {
+                    capture.EndFaceGroup();
                 }
             }
             catch (Exception ex) {
+                if (inFaceGroup) capture.EndFaceGroup();
                 pd.IblSampler?.Dispose();
                 pd.IblSampler = null;
                 pd.ScheduleFrameIndex = 0;
