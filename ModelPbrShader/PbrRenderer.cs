@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using Engine;
 using Engine.Animation;
@@ -74,13 +73,26 @@ namespace Game {
         public const float CaptureMaxVisibilityRange = 64f; // 要捕获的地形区块的最大距离（米）
 
         // 捕获调度
-        static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> DefaultSchedule = new CaptureStep[][] {
+        static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> CaptureScheduleLow = [
+            [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1],
+            [CaptureStep.CaptureFace2, CaptureStep.CaptureFace3],
+            [CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
+            [CaptureStep.FilterLambertian],
+            [CaptureStep.FilterGGX]
+        ];
+
+        static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> CaptureScheduleMedium = [
             [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1, CaptureStep.CaptureFace2],
             [CaptureStep.CaptureFace3, CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
             [CaptureStep.FilterLambertian],
             [CaptureStep.FilterGGX],
             [CaptureStep.FilterSheen]
-        };
+        ];
+
+        static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> CaptureScheduleHigh = [
+            [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1, CaptureStep.CaptureFace2, CaptureStep.CaptureFace3, CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
+            [CaptureStep.FilterLambertian, CaptureStep.FilterGGX, CaptureStep.FilterSheen]
+        ];
 
         IReadOnlyList<IReadOnlyList<CaptureStep>> _captureSchedule;
 
@@ -190,7 +202,7 @@ namespace Game {
                 pd.ScheduleFrameIndex = 0;
                 return;
             }
-            IReadOnlyList<IReadOnlyList<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
+            IReadOnlyList<IReadOnlyList<CaptureStep>> schedule = _captureSchedule ?? CaptureScheduleLow;
             IReadOnlyList<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
             bool inFaceGroup = false;
             try {
@@ -219,7 +231,7 @@ namespace Game {
                             case CaptureStep.FinalizeCapture: {
                                 CubemapTexture cubemap = capture.FinalizeCapture();
                                 pd.IblSampler ??= new IblSampler();
-                                pd.IblSampler.BeginProcess(cubemap, EnvironmentMapFaceSize);
+                                pd.IblSampler.BeginProcess(cubemap);
                                 break;
                             }
                             case CaptureStep.FilterLambertian: pd.IblSampler.ProcessLambertian(); break;

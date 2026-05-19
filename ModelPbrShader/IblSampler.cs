@@ -5,11 +5,21 @@ using Silk.NET.OpenGLES;
 
 namespace Game {
     public class IblSampler : IDisposable {
-        readonly int _ggxSampleCount = 256;
-        readonly int _lambertianSampleCount = 512;
-        readonly int _lowestMipLevel = 4;
-        readonly int _lutResolution = 512;
-        readonly int _sheenSampleCount = 64;
+        readonly int _ggxSampleCount;
+        readonly int _lambertianSampleCount;
+        readonly int _lowestMipLevel;
+        readonly int _lutResolution;
+        readonly int _sheenSampleCount;
+        public int TextureSize { get; }
+
+        public IblSampler(int textureSize = 128, int ggxLutResolution = 512, int lambertianSampleCount = 512, int ggxSampleCount = 256, int sheenSampleCount = 64, int lowestMipLevel = 4) {
+            TextureSize = textureSize;
+            _lutResolution = ggxLutResolution;
+            _lambertianSampleCount = lambertianSampleCount;
+            _ggxSampleCount = ggxSampleCount;
+            _sheenSampleCount = sheenSampleCount;
+            _lowestMipLevel = lowestMipLevel;
+        }
         int _textureSize;
         CubemapTexture _sourceCubemap;
         bool _disposed;
@@ -43,12 +53,12 @@ namespace Game {
             CharlieLut = null;
         }
 
-        public void BeginProcess(CubemapTexture cubemapTexture, int size) {
-            _textureSize = size;
+        public void BeginProcess(CubemapTexture cubemapTexture) {
+            _textureSize = TextureSize;
             _sourceCubemap = cubemapTexture;
-            int maxMipLevels = (int)Math.Floor(Math.Log2(size)) + 1;
+            int maxMipLevels = (int)Math.Floor(Math.Log2(TextureSize)) + 1;
             MipCount = Math.Min(maxMipLevels - _lowestMipLevel, 4);
-            EnsureCubemapTextures(size, maxMipLevels);
+            EnsureCubemapTextures(TextureSize, maxMipLevels);
             _computeShader ??= ComputeShader.Create(LoadShaderSource("ibl_filtering.comp"));
         }
 
@@ -59,16 +69,17 @@ namespace Game {
 
         public void ProcessGGX() {
             CubeMapToGGX();
+            if (!_lutGenerated) {
+                GenerateGGXLut();
+                _lutGenerated = true;
+            }
             CleanupComputeState();
+            _sourceCubemap = null;
         }
 
         public void ProcessSheen() {
             CubeMapToSheen();
-            if (!_lutGenerated) {
-                GenerateGGXLut();
-                GenerateCharlieLut();
-                _lutGenerated = true;
-            }
+            GenerateCharlieLut();
             CleanupComputeState();
             _sourceCubemap = null;
         }

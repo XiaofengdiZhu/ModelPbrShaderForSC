@@ -1,0 +1,14 @@
+{
+  "ModelPbrShaderLoader": {
+    "1": "模型 PBR 着色器"
+  },
+  "SettingsModelPbrShaderScreen": {
+    "IblQuality": [ "禁用", "低", "中", "高" ]
+  },
+  "ContentWidgets": {
+    "SettingsModelPbrShaderScreen": {
+      "1": "调整模型 PBR 着色器设置",
+      "2": "基于图像的光照"
+    }
+  }
+}

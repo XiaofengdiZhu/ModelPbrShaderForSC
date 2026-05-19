@@ -1,8 +1,8 @@
 {
   "$schema": "https://gitee.com/SC-SPM/SurvivalcraftApi/raw/SCAPI1.9/Survivalcraft/Content/modinfo-scheme.json",
-  "Name": "Model PBR Shader",
-  "Version": "1.0.0",
-  "ApiVersion": "1.9.1",
+  "Name": "Model PBR Shader 模型 PBR 着色器",
+  "Version": "1.1.0",
+  "ApiVersion": "1.9.1.2",
   "Description": "PBR rendering for models with IBL support. 为模型提供基于图像光照的 PBR 渲染。",
   "ScVersion": "2.4.0.0",
   "LoadOrder": 10000,

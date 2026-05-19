@@ -1,0 +1,14 @@
+{
+  "ModelPbrShaderLoader": {
+    "1": "Model PBR Shader"
+  },
+  "SettingsModelPbrShaderScreen": {
+    "IblQuality": [ "Disable", "Low", "Medium", "High" ]
+  },
+  "ContentWidgets": {
+    "SettingsModelPbrShaderScreen": {
+      "1": "Adjust Model PBR Shader Settings",
+      "2": "Imaged Based Lighting"
+    }
+  }
+}
