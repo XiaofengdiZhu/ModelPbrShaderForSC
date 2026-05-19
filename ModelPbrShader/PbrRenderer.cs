@@ -74,17 +74,17 @@ namespace Game {
         public const float CaptureMaxVisibilityRange = 64f; // 要捕获的地形区块的最大距离（米）
 
         // 捕获调度
-        static readonly List<List<CaptureStep>> DefaultSchedule = [
+        static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> DefaultSchedule = new CaptureStep[][] {
             [CaptureStep.PrepareCapture, CaptureStep.CaptureFace0, CaptureStep.CaptureFace1, CaptureStep.CaptureFace2],
             [CaptureStep.CaptureFace3, CaptureStep.CaptureFace4, CaptureStep.CaptureFace5, CaptureStep.FinalizeCapture],
             [CaptureStep.FilterLambertian],
             [CaptureStep.FilterGGX],
             [CaptureStep.FilterSheen]
-        ];
+        };
 
-        List<List<CaptureStep>> _captureSchedule;
+        IReadOnlyList<IReadOnlyList<CaptureStep>> _captureSchedule;
 
-        public void SetCaptureSchedule(List<List<CaptureStep>> schedule) {
+        public void SetCaptureSchedule(IReadOnlyList<IReadOnlyList<CaptureStep>> schedule) {
             _captureSchedule = schedule;
         }
 
@@ -190,8 +190,8 @@ namespace Game {
                 pd.ScheduleFrameIndex = 0;
                 return;
             }
-            List<List<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
-            List<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
+            IReadOnlyList<IReadOnlyList<CaptureStep>> schedule = _captureSchedule ?? DefaultSchedule;
+            IReadOnlyList<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
             bool inFaceGroup = false;
             try {
                 foreach (CaptureStep step in steps) {
