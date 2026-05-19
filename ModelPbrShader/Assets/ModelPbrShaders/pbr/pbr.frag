@@ -171,14 +171,14 @@ void main()
 
     // Calculate lighting contribution from image based lighting source (IBL)
 
-    #if defined(USE_IBL) || defined(MATERIAL_TRANSMISSION)
-
     // Get IBL strength (instanced: from vertex attribute, non-instanced: from uniform)
 #ifdef USE_INSTANCING
     float iblStrength = v_instanceLight.y;
 #else
     float iblStrength = u_IblStrength;
 #endif
+
+    #if defined(USE_IBL) || defined(MATERIAL_TRANSMISSION)
 
     // Only compute IBL contribution if strength > 0
     if (iblStrength > 0.0) {
@@ -250,6 +250,18 @@ void main()
     } // iblStrength > 0.0
 
     #endif//end USE_IBL
+
+    #if !defined(USE_IBL) && !defined(MATERIAL_TRANSMISSION)
+    // Simple hemisphere ambient when IBL is disabled
+    float ambientUp = n.y * 0.5 + 0.5;
+    float ambientStrength = iblStrength * mix(0.15, 0.5, ambientUp);
+    vec3 ambientColor = baseColor.rgb * ambientStrength;
+    #ifdef HAS_OCCLUSION_MAP
+    ao = texture(u_OcclusionSampler, getOcclusionUV()).r;
+    ambientColor *= (1.0 + u_OcclusionStrength * (ao - 1.0));
+    #endif
+    color += ambientColor;
+    #endif
 
     // Debug: raw IBL output (linear, no tone map, no punctual light)
     #if DEBUG == DEBUG_IBL_RAW

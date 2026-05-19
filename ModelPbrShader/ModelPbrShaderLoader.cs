@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Xml.Linq;
 using Engine;
-using XmlUtilities;
 
 namespace Game {
     public class ModelPbrShaderLoader : ModLoader {
@@ -32,18 +31,26 @@ namespace Game {
 
         public override void SaveSettings(XElement xElement) {
             XElement container = new XElement("ModelPbrShader");
-            container.SetAttributeValue("IblQuality", ModelPbrShaderSettings.IblQuality);
+            container.SetAttributeValue("EnvironmentReflection", ModelPbrShaderSettings.EnvironmentReflection);
+            container.SetAttributeValue("ReflectionQuality", ModelPbrShaderSettings.ReflectionQuality);
+            container.SetAttributeValue("CaptureFrequency", ModelPbrShaderSettings.CaptureFrequency);
             xElement.Add(container);
         }
 
         public override void LoadSettings(XElement xElement) {
             XElement container = xElement.Element("ModelPbrShader");
             if (container != null) {
-                string iblQualityString = container.Attribute("IblQuality")?.Value;
-                if (int.TryParse(iblQualityString, out int iblQuality)) {
-                    ModelPbrShaderSettings.IblQuality = iblQuality;
+                if (int.TryParse(container.Attribute("EnvironmentReflection")?.Value, out int envRef)) {
+                    ModelPbrShaderSettings.EnvironmentReflection = envRef;
+                }
+                if (int.TryParse(container.Attribute("ReflectionQuality")?.Value, out int quality)) {
+                    ModelPbrShaderSettings.ReflectionQuality = quality;
+                }
+                if (int.TryParse(container.Attribute("CaptureFrequency")?.Value, out int freq)) {
+                    ModelPbrShaderSettings.CaptureFrequency = freq;
                 }
             }
+            ModelPbrShaderSettings.Dirty = false;
         }
     }
 }

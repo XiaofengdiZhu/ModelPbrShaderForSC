@@ -38,6 +38,7 @@ namespace Game {
                 if (_subsystemTerrain != null
                     && _subsystemSky != null) {
                     Renderer.InitializeDynamicIbl(_subsystemTerrain, _subsystemSky);
+                    ModelPbrShaderSettings.Dirty = true;
                 }
             }
 

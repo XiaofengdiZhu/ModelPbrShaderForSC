@@ -1,23 +1,47 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 
 namespace Game {
-    public class SettingsModelPbrShaderScreen: Screen {
+    public class SettingsModelPbrShaderScreen : Screen {
         public const string fName = "SettingsModelPbrShaderScreen";
-        public readonly SliderWidget m_iblQualitySlider;
+        public readonly BevelledButtonWidget m_environmentReflectionButton;
+        public readonly SliderWidget m_reflectionQualitySlider;
+        public readonly SliderWidget m_captureFrequencySlider;
+
         public SettingsModelPbrShaderScreen() {
             XElement node = ContentManager.Get<XElement>("Screens/SettingsModelPbrShaderScreen");
             LoadContents(this, node);
-            m_iblQualitySlider = Children.Find<SliderWidget>("IblQuality");
-            m_iblQualitySlider.Value = ModelPbrShaderSettings.IblQuality;
-            m_iblQualitySlider.Text = LanguageControl.Get(fName, "IblQuality", ModelPbrShaderSettings.IblQuality.ToString());
+            m_environmentReflectionButton = Children.Find<BevelledButtonWidget>("EnvironmentReflection");
+            m_reflectionQualitySlider = Children.Find<SliderWidget>("ReflectionQuality");
+            m_captureFrequencySlider = Children.Find<SliderWidget>("CaptureFrequency");
+            m_reflectionQualitySlider.Value = ModelPbrShaderSettings.ReflectionQuality;
+            m_captureFrequencySlider.Value = ModelPbrShaderSettings.CaptureFrequency;
+            UpdateText();
+        }
+
+        void UpdateText() {
+            m_environmentReflectionButton.Text = LanguageControl.Get(fName, "EnvironmentReflection", ModelPbrShaderSettings.EnvironmentReflection.ToString());
+            m_reflectionQualitySlider.Text = LanguageControl.Get(fName, "ReflectionQuality", ModelPbrShaderSettings.ReflectionQuality.ToString());
+            m_captureFrequencySlider.Text = LanguageControl.Get(fName, "CaptureFrequency", ModelPbrShaderSettings.CaptureFrequency.ToString());
         }
 
         public override void Update() {
-            if (m_iblQualitySlider.IsSliding) {
-                ModelPbrShaderSettings.IblQuality = (int)m_iblQualitySlider.Value;
-                m_iblQualitySlider.Value = ModelPbrShaderSettings.IblQuality;
-                m_iblQualitySlider.Text = LanguageControl.Get(fName, "IblQuality", ModelPbrShaderSettings.IblQuality.ToString());
+            if (m_environmentReflectionButton.IsClicked) {
+                ModelPbrShaderSettings.EnvironmentReflection = 1 - ModelPbrShaderSettings.EnvironmentReflection;
+                UpdateText();
             }
+            if (m_reflectionQualitySlider.IsSliding) {
+                ModelPbrShaderSettings.ReflectionQuality = (int)m_reflectionQualitySlider.Value;
+                m_reflectionQualitySlider.Value = ModelPbrShaderSettings.ReflectionQuality;
+                UpdateText();
+            }
+            if (m_captureFrequencySlider.IsSliding) {
+                ModelPbrShaderSettings.CaptureFrequency = (int)m_captureFrequencySlider.Value;
+                m_captureFrequencySlider.Value = ModelPbrShaderSettings.CaptureFrequency;
+                UpdateText();
+            }
+            bool iblOn = ModelPbrShaderSettings.EnvironmentReflection > 0;
+            m_reflectionQualitySlider.IsEnabled = iblOn;
+            m_captureFrequencySlider.IsEnabled = iblOn;
             if (Input.Back
                 || Input.Cancel
                 || Children.Find<ButtonWidget>("TopBar.Back").IsClicked) {

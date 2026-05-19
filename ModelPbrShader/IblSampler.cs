@@ -74,7 +74,6 @@ namespace Game {
                 _lutGenerated = true;
             }
             CleanupComputeState();
-            _sourceCubemap = null;
         }
 
         public void ProcessSheen() {
@@ -155,6 +154,7 @@ namespace Game {
         }
 
         void GenerateCharlieLut() {
+            CharlieLut?.Dispose();
             CharlieLut = CreateImmutableTexture2D(_lutResolution, _lutResolution, 1);
             CharlieLut.SamplerState = SamplerState.LinearClamp;
             SetLinearFilter(CharlieLut);

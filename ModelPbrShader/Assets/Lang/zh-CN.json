@@ -3,12 +3,16 @@
     "1": "模型 PBR 着色器"
   },
   "SettingsModelPbrShaderScreen": {
-    "IblQuality": [ "禁用", "低", "中", "高" ]
+    "EnvironmentReflection": [ "关", "开" ],
+    "ReflectionQuality": [ "低", "中", "高" ],
+    "CaptureFrequency": [ "低", "中", "高" ]
   },
   "ContentWidgets": {
     "SettingsModelPbrShaderScreen": {
       "1": "调整模型 PBR 着色器设置",
-      "2": "基于图像的光照"
+      "2": "环境反射",
+      "3": "反射画质",
+      "4": "捕获频率"
     }
   }
 }

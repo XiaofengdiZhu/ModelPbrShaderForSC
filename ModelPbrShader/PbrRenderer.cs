@@ -65,12 +65,8 @@ namespace Game {
         public readonly Dictionary<int, PlayerEnvironmentData> PlayerEnvironments = new();
         PlayerEnvironmentData _currentPlayerData;
 
-        // 捕获常量
-        const float CaptureMoveDistanceThreshold = 1.5f; // 触发捕获的移动距离（米）
-        const float CaptureTimeThresholdNear = 1f; // 移动后的最短捕获间隔（秒）
-        const float CaptureTimeThresholdFar = 3f; // 静止时的捕获间隔（秒）
-        const int EnvironmentMapFaceSize = 256; // Cubemap 每面分辨率
-        public const float CaptureMaxVisibilityRange = 64f; // 要捕获的地形区块的最大距离（米）
+        const int GgxLutResolution = 512;
+        public const float CaptureMaxVisibilityRange = 64f;
 
         // 捕获调度
         static readonly IReadOnlyList<IReadOnlyList<CaptureStep>> CaptureScheduleLow = [
@@ -94,10 +90,12 @@ namespace Game {
             [CaptureStep.FilterLambertian, CaptureStep.FilterGGX, CaptureStep.FilterSheen]
         ];
 
-        IReadOnlyList<IReadOnlyList<CaptureStep>> _captureSchedule;
-
-        public void SetCaptureSchedule(IReadOnlyList<IReadOnlyList<CaptureStep>> schedule) {
-            _captureSchedule = schedule;
+        static IReadOnlyList<IReadOnlyList<CaptureStep>> GetScheduleForQuality() {
+            return ModelPbrShaderSettings.IncludeSheen() switch {
+                false => CaptureScheduleLow,
+                true when ModelPbrShaderSettings.ReflectionQuality >= 2 => CaptureScheduleHigh,
+                _ => CaptureScheduleMedium
+            };
         }
 
         // 是否启用动态 IBL（默认 false，由 SubsystemModelPbrShader 启用）
@@ -115,7 +113,6 @@ namespace Game {
         /// <param name="subsystemTerrain">地形子系统</param>
         /// <param name="subsystemSky">天空子系统</param>
         public void InitializeDynamicIbl(SubsystemTerrain subsystemTerrain, SubsystemSky subsystemSky) {
-            DynamicIblEnabled = true;
             Log.Information("[PBR Shader] Dynamic IBL initialized");
         }
 
@@ -168,11 +165,11 @@ namespace Game {
             float distanceMoved = Vector3.Distance(currentPosition, playerData.LastCapturePosition);
             double timeSinceCapture = Time.FrameStartTime - playerData.LastCaptureTime;
             bool result;
-            if (distanceMoved > CaptureMoveDistanceThreshold) {
-                result = timeSinceCapture > CaptureTimeThresholdNear;
+            if (distanceMoved > ModelPbrShaderSettings.GetMoveDistanceThreshold()) {
+                result = timeSinceCapture > ModelPbrShaderSettings.GetTimeThresholdNear();
             }
             else {
-                result = timeSinceCapture > CaptureTimeThresholdFar;
+                result = timeSinceCapture > ModelPbrShaderSettings.GetTimeThresholdFar();
             }
 
             // 首次捕获（LastCaptureTime == 0）
@@ -202,7 +199,7 @@ namespace Game {
                 pd.ScheduleFrameIndex = 0;
                 return;
             }
-            IReadOnlyList<IReadOnlyList<CaptureStep>> schedule = _captureSchedule ?? CaptureScheduleLow;
+            IReadOnlyList<IReadOnlyList<CaptureStep>> schedule = GetScheduleForQuality();
             IReadOnlyList<CaptureStep> steps = schedule[pd.ScheduleFrameIndex];
             bool inFaceGroup = false;
             try {
@@ -225,12 +222,19 @@ namespace Game {
                                 capture.PrepareCapture(
                                     _camera.GameWidget,
                                     pd.PendingCapturePosition,
-                                    EnvironmentMapFaceSize,
+                                    ModelPbrShaderSettings.GetFaceSize(),
                                     Math.Min(_subsystemSky.VisibilityRange, CaptureMaxVisibilityRange)
                                 ); break;
                             case CaptureStep.FinalizeCapture: {
                                 CubemapTexture cubemap = capture.FinalizeCapture();
-                                pd.IblSampler ??= new IblSampler();
+                                pd.IblSampler ??= new IblSampler(
+                                    ModelPbrShaderSettings.GetTextureSize(),
+                                    GgxLutResolution,
+                                    ModelPbrShaderSettings.GetLambertianSampleCount(),
+                                    ModelPbrShaderSettings.GetGgxSampleCount(),
+                                    ModelPbrShaderSettings.GetSheenSampleCount(),
+                                    ModelPbrShaderSettings.GetLowestMipLevel()
+                                );
                                 pd.IblSampler.BeginProcess(cubemap);
                                 break;
                             }
@@ -472,6 +476,11 @@ namespace Game {
         public override void BeginFrame(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
             _allModels = allModels;
 
+            // 热调整设置
+            if (ModelPbrShaderSettings.Dirty) {
+                ApplySettings();
+            }
+
             // 动态 IBL：获取当前玩家数据并触发捕获
             if (DynamicIblEnabled) {
                 _currentPlayerData = GetOrCreatePlayerData(camera);
@@ -496,10 +505,43 @@ namespace Game {
                     IblSampler = _currentPlayerData.IblSampler;
                     MipCount = _currentPlayerData.MipCount;
                 }
+                else {
+                    IblSampler = null;
+                }
+            }
+            else {
+                IblSampler = null;
             }
             base.BeginFrame(camera, allModels);
             PrepareCustomQueues(allModels);
         }
+
+        void ApplySettings() {
+            DynamicIblEnabled = ModelPbrShaderSettings.IsIblEnabled;
+            if (!DynamicIblEnabled) {
+                foreach (PlayerEnvironmentData pd in PlayerEnvironments.Values) {
+                    pd.IblSampler?.Dispose();
+                    pd.IblSampler = null;
+                    pd.Phase = CapturePhase.Idle;
+                    pd.ScheduleFrameIndex = 0;
+                }
+            }
+            else {
+                bool qualityChanged = _lastAppliedQuality != ModelPbrShaderSettings.ReflectionQuality;
+                if (qualityChanged) {
+                    foreach (PlayerEnvironmentData pd in PlayerEnvironments.Values) {
+                        pd.IblSampler?.Dispose();
+                        pd.IblSampler = null;
+                        pd.Phase = CapturePhase.Idle;
+                        pd.ScheduleFrameIndex = 0;
+                    }
+                    _lastAppliedQuality = ModelPbrShaderSettings.ReflectionQuality;
+                }
+            }
+            ModelPbrShaderSettings.Dirty = false;
+        }
+
+        int _lastAppliedQuality = ModelPbrShaderSettings.ReflectionQuality;
 
         public struct CelestialBodyCacheEntry {
             public bool Visible;
@@ -1043,10 +1085,10 @@ namespace Game {
         /// 基于模型光照计算 IBL 贡献强度
         /// </summary>
         float CalculateIblStrength(SubsystemModelsRenderer.ModelData modelData) {
-            if (IblSampler == null) {
-                return 0f;
-            }
             float modelLight = Math.Max(modelData.Light, 0.0625f);
+            if (IblSampler == null) {
+                return modelLight * EnvironmentStrength;
+            }
             float iblStrength;
             if (DynamicIblEnabled && _currentPlayerData != null) {
                 float playerLight = Math.Max(_currentPlayerData.CachedPlayerLight, 0.0625f);
