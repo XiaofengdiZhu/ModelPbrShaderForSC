@@ -4,7 +4,10 @@ namespace Game {
     public class ModelPbrShaderSettings {
         public static bool Dirty;
 
-        static int _environmentReflection = 1;
+        static int _environmentReflection = VersionsManager.CurrentPlatform switch {
+            VersionsManager.Platform.Windows or VersionsManager.Platform.Linux => 1,
+            _ => 0
+        };
         static int _reflectionQuality = 1;
         static int _captureFrequency = 1;
 
