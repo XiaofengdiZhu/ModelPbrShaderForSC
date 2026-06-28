@@ -2,6 +2,7 @@
 // UBO 定义文件，供 pbr.frag 包含
 // 必须与 UniformBuffer.cs 中的结构体完全匹配
 
+#ifndef VERT_UBO_MINIMAL
 // ============================================================================
 // SceneData UBO - 场景级数据 (Binding Point 0)
 // Total: 80 bytes
@@ -260,6 +261,8 @@ layout(std140) uniform LightsData {
 #define u_Lights lightsData.lights
 #define u_LightCount lightsData.LightCount
 
+#endif // VERT_UBO_MINIMAL
+
 // ============================================================================
 // RenderStateData UBO - 渲染状态矩阵 (Binding Point 3)
 // Total: 320 bytes
@@ -279,6 +282,7 @@ layout(std140) uniform RenderStateData {
 #define u_ModelMatrix renderState.ModelMatrix
 #define u_NormalMatrix renderState.NormalMatrix
 
+#ifndef VERT_UBO_MINIMAL
 // ============================================================================
 // UVTransformData UBO - UV 变换矩阵 (Binding Point 4)
 // Total: 1008 bytes (21 * 48)
@@ -380,3 +384,5 @@ layout(std140) uniform VolumeScatterData {
 // u_FramebufferSize 使用 ivec2 构造
 #define u_FramebufferSize ivec2(volumeScatter.FramebufferWidth, volumeScatter.FramebufferHeight)
 #endif
+
+#endif // VERT_UBO_MINIMAL

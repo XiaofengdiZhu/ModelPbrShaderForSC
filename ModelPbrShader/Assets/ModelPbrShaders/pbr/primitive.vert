@@ -12,6 +12,7 @@
 #endif
 
 #include <animation.glsl>
+#define VERT_UBO_MINIMAL
 #include <ubos.glsl>
 
 
