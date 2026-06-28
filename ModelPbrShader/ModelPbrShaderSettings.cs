@@ -10,6 +10,7 @@ namespace Game {
         };
         static int _reflectionQuality = 1;
         static int _captureFrequency = 1;
+        static DebugChannel _debugChannel = DebugChannel.None;
 
         public static int EnvironmentReflection {
             get => _environmentReflection;
@@ -45,6 +46,17 @@ namespace Game {
         }
 
         public static bool IsIblEnabled => _environmentReflection > 0;
+
+        public static DebugChannel DebugChannel {
+            get => _debugChannel;
+            set {
+                int clamped = Math.Clamp((int)value, 0, (int)DebugChannel.IblSpecular);
+                if ((int)_debugChannel != clamped) {
+                    _debugChannel = (DebugChannel)clamped;
+                    Dirty = true;
+                }
+            }
+        }
 
         // 画质预设：IblSampler 参数
         static readonly int[] FaceSizes = [128, 256, 256];

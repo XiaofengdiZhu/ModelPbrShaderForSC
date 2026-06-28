@@ -34,6 +34,7 @@ namespace Game {
             container.SetAttributeValue("EnvironmentReflection", ModelPbrShaderSettings.EnvironmentReflection);
             container.SetAttributeValue("ReflectionQuality", ModelPbrShaderSettings.ReflectionQuality);
             container.SetAttributeValue("CaptureFrequency", ModelPbrShaderSettings.CaptureFrequency);
+            container.SetAttributeValue("DebugChannel", (int)ModelPbrShaderSettings.DebugChannel);
             xElement.Add(container);
         }
 
@@ -48,6 +49,9 @@ namespace Game {
                 }
                 if (int.TryParse(container.Attribute("CaptureFrequency")?.Value, out int freq)) {
                     ModelPbrShaderSettings.CaptureFrequency = freq;
+                }
+                if (int.TryParse(container.Attribute("DebugChannel")?.Value, out int dbgCh)) {
+                    ModelPbrShaderSettings.DebugChannel = (DebugChannel)dbgCh;
                 }
             }
             ModelPbrShaderSettings.Dirty = false;

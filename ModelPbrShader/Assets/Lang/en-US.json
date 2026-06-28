@@ -5,14 +5,54 @@
   "SettingsModelPbrShaderScreen": {
     "EnvironmentReflection": [ "Off", "On" ],
     "ReflectionQuality": [ "Low", "Medium", "High" ],
-    "CaptureFrequency": [ "Low", "Medium", "High" ]
+    "CaptureFrequency": [ "Low", "Medium", "High" ],
+    "DebugChannel": [
+      "None",
+      "UV0",
+      "UV1",
+      "Normal Map",
+      "Normal",
+      "Geometric Normal",
+      "Tangent",
+      "Tangent W",
+      "Bitangent",
+      "Base Color Alpha",
+      "Occlusion",
+      "Emissive",
+      "Metallic",
+      "Roughness",
+      "Base Color",
+      "Clearcoat",
+      "Clearcoat Roughness",
+      "Clearcoat Normal",
+      "Sheen",
+      "Sheen Roughness",
+      "Specular Factor",
+      "Specular Color",
+      "Transmission",
+      "Volume Thickness",
+      "Iridescence Factor",
+      "Iridescence Thickness",
+      "Anisotropic Strength",
+      "Anisotropic Direction",
+      "Diffuse Transmission Factor",
+      "Diffuse Transmission Color",
+      "Volume Scatter Multi-Scatter",
+      "Volume Scatter Single-Scatter",
+      "IBL Raw",
+      "N·V",
+      "Fresnel Dielectric",
+      "IBL Diffuse",
+      "IBL Specular"
+    ]
   },
   "ContentWidgets": {
     "SettingsModelPbrShaderScreen": {
       "1": "Adjust Model PBR Shader Settings",
       "2": "Environment Reflection",
       "3": "Reflection Quality",
-      "4": "Capture Frequency"
+      "4": "Capture Frequency",
+      "5": "Debug Channel"
     }
   }
 }

@@ -194,7 +194,7 @@ namespace Game {
             CurrentContext.IsScatterPass = false;
             CurrentContext.ToneMapMode = ToneMapMode.KhrPbrNeutral;
             CurrentContext.HasPunctualLight = false;
-            CurrentContext.DebugChannel = DebugChannel.None;
+            CurrentContext.DebugChannel = ModelPbrShaderSettings.DebugChannel;
             CurrentContext.EnableSkinning = false;
             CurrentContext.EnableMorphing = true;
             CurrentContext.LightDirection = lightDirection;

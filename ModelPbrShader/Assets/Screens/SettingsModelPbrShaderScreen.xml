@@ -28,6 +28,11 @@
             <SliderWidget Name="CaptureFrequency" Size="Infinity, 60" VerticalAlignment="Center" Margin="20, 0" Granularity="1" MinValue="0" MaxValue="2" />
           </UniformSpacingPanelWidget>
 
+          <UniformSpacingPanelWidget Direction="Horizontal" Margin="0, 3">
+            <LabelWidget Text="[SettingsModelPbrShaderScreen:5]" HorizontalAlignment="Far" VerticalAlignment="Center" Margin="20, 0" />
+            <BevelledButtonWidget Name="DebugChannel" Style="{Styles/ButtonStyle_310x60}" VerticalAlignment="Center" Margin="20, 0" />
+          </UniformSpacingPanelWidget>
+
         </StackPanelWidget>
       </ScrollPanelWidget>
     </CanvasWidget>

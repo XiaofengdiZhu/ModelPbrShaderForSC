@@ -6,6 +6,7 @@ namespace Game {
         public readonly BevelledButtonWidget m_environmentReflectionButton;
         public readonly SliderWidget m_reflectionQualitySlider;
         public readonly SliderWidget m_captureFrequencySlider;
+        public readonly BevelledButtonWidget m_debugChannelButton;
 
         public SettingsModelPbrShaderScreen() {
             XElement node = ContentManager.Get<XElement>("Screens/SettingsModelPbrShaderScreen");
@@ -13,6 +14,7 @@ namespace Game {
             m_environmentReflectionButton = Children.Find<BevelledButtonWidget>("EnvironmentReflection");
             m_reflectionQualitySlider = Children.Find<SliderWidget>("ReflectionQuality");
             m_captureFrequencySlider = Children.Find<SliderWidget>("CaptureFrequency");
+            m_debugChannelButton = Children.Find<BevelledButtonWidget>("DebugChannel");
             m_reflectionQualitySlider.Value = ModelPbrShaderSettings.ReflectionQuality;
             m_captureFrequencySlider.Value = ModelPbrShaderSettings.CaptureFrequency;
             UpdateText();
@@ -22,6 +24,7 @@ namespace Game {
             m_environmentReflectionButton.Text = LanguageControl.Get(fName, "EnvironmentReflection", ModelPbrShaderSettings.EnvironmentReflection.ToString());
             m_reflectionQualitySlider.Text = LanguageControl.Get(fName, "ReflectionQuality", ModelPbrShaderSettings.ReflectionQuality.ToString());
             m_captureFrequencySlider.Text = LanguageControl.Get(fName, "CaptureFrequency", ModelPbrShaderSettings.CaptureFrequency.ToString());
+            m_debugChannelButton.Text = LanguageControl.Get(fName, "DebugChannel", ((int)ModelPbrShaderSettings.DebugChannel).ToString());
         }
 
         public override void Update() {
@@ -38,6 +41,21 @@ namespace Game {
                 ModelPbrShaderSettings.CaptureFrequency = (int)m_captureFrequencySlider.Value;
                 m_captureFrequencySlider.Value = ModelPbrShaderSettings.CaptureFrequency;
                 UpdateText();
+            }
+            if (m_debugChannelButton.IsClicked) {
+                DialogsManager.ShowDialog(
+                    null,
+                    new ListSelectionDialog(
+                        LanguageControl.Get("ContentWidgets", fName, "5"),
+                        EnumUtils.GetEnumValues<DebugChannel>(),
+                        56f,
+                        e => LanguageControl.Get(fName, "DebugChannel", ((int)(DebugChannel)e).ToString()),
+                        e => {
+                            ModelPbrShaderSettings.DebugChannel = (DebugChannel)e;
+                            UpdateText();
+                        }
+                    )
+                );
             }
             bool iblOn = ModelPbrShaderSettings.EnvironmentReflection > 0;
             m_reflectionQualitySlider.IsEnabled = iblOn;
