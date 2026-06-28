@@ -54,9 +54,8 @@ namespace Game {
             _capturePosition = capturePosition;
             _captureFarPlane = captureFarPlane;
             _captureChunks = CullChunksByDistance(capturePosition, _captureFarPlane);
-            int compensateY = Display.BackbufferSize.Y - faceSize;
-            _cubemapViewport = new Viewport(0, compensateY, faceSize, faceSize);
-            _cubemapScissor = new Rectangle(0, compensateY, faceSize, faceSize);
+            _cubemapViewport = new Viewport(0, 0, faceSize, faceSize);
+            _cubemapScissor = new Rectangle(0, 0, faceSize, faceSize);
         }
 
         public void BeginFaceGroup() {
