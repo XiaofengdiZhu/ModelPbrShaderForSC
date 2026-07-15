@@ -30,6 +30,10 @@ namespace Game {
                 }
             }
             if (Renderer != null) {
+                // 装载模组设置到缓存（设置值在进存档前已由 ModSettingsManager 注册就绪）
+                ModelPbrShaderSettings.ApplyPlatformDefaultOnFirstRun();
+                ModelPbrShaderSettings.LoadFromModSettings();
+
                 _subsystemModelsRenderer.CustomRenderer = Renderer;
                 _subsystemModelsRenderer.UseCustomRendering = true;
                 Renderer.Initialize(_subsystemModelsRenderer);

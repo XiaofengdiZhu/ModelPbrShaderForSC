@@ -1,8 +1,8 @@
 {
   "$schema": "https://gitee.com/SC-SPM/SurvivalcraftApi/raw/SCAPI1.9/Survivalcraft/Content/modinfo-scheme.json",
   "Name": "Model PBR Shader 模型 PBR 着色器",
-  "Version": "1.1.1",
-  "ApiVersion": "1.9.2.1",
+  "Version": "1.1.2",
+  "ApiVersion": "1.9.3",
   "Description": "PBR rendering for models with IBL support. 为模型提供基于图像光照的 PBR 渲染。",
   "ScVersion": "2.4.0.0",
   "LoadOrder": 10000,
@@ -11,5 +11,40 @@
   "Link": "https://github.com/XiaofengdiZhu/ModelPbrShaderForSC",
   "Author": "销锋镝铸 XiaofengdiZhu",
   "PackageName": "xfdz.ModelPbrShader",
-  "Dependencies": {}
+  "Dependencies": {},
+  "Settings": [
+    {
+      "Id": "Settings",
+      "Items": [
+        {
+          "Id": "EnvironmentReflection",
+          "Type": "bool",
+          "Default": false,
+          "Widget": "BoolButtonSettingWidget",
+          "WidgetProperties": {
+            "TextTrue": "[Usual:on]",
+            "TextFalse": "[Usual:off]"
+          }
+        },
+        {
+          "Id": "ReflectionQuality",
+          "Type": "ReflectionQuality",
+          "Default": "Medium",
+          "Widget": "EnumSliderSettingWidget"
+        },
+        {
+          "Id": "CaptureFrequency",
+          "Type": "CaptureFrequency",
+          "Default": "Medium",
+          "Widget": "EnumSliderSettingWidget"
+        },
+        {
+          "Id": "DebugChannel",
+          "Type": "DebugChannel",
+          "Default": "None",
+          "Widget": "EnumSelectionDialogSettingWidget"
+        }
+      ]
+    }
+  ]
 }

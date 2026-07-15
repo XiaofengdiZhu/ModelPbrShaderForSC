@@ -1,58 +1,75 @@
 {
-  "ModelPbrShaderLoader": {
-    "1": "Model PBR Shader"
-  },
-  "SettingsModelPbrShaderScreen": {
-    "EnvironmentReflection": [ "Off", "On" ],
-    "ReflectionQuality": [ "Low", "Medium", "High" ],
-    "CaptureFrequency": [ "Low", "Medium", "High" ],
-    "DebugChannel": [
-      "None",
-      "UV0",
-      "UV1",
-      "Normal Map",
-      "Normal",
-      "Geometric Normal",
-      "Tangent",
-      "Tangent W",
-      "Bitangent",
-      "Base Color Alpha",
-      "Occlusion",
-      "Emissive",
-      "Metallic",
-      "Roughness",
-      "Base Color",
-      "Clearcoat",
-      "Clearcoat Roughness",
-      "Clearcoat Normal",
-      "Sheen",
-      "Sheen Roughness",
-      "Specular Factor",
-      "Specular Color",
-      "Transmission",
-      "Volume Thickness",
-      "Iridescence Factor",
-      "Iridescence Thickness",
-      "Anisotropic Strength",
-      "Anisotropic Direction",
-      "Diffuse Transmission Factor",
-      "Diffuse Transmission Color",
-      "Volume Scatter Multi-Scatter",
-      "Volume Scatter Single-Scatter",
-      "IBL Raw",
-      "N·V",
-      "Fresnel Dielectric",
-      "IBL Diffuse",
-      "IBL Specular"
-    ]
-  },
-  "ContentWidgets": {
-    "SettingsModelPbrShaderScreen": {
-      "1": "Adjust Model PBR Shader Settings",
-      "2": "Environment Reflection",
-      "3": "Reflection Quality",
-      "4": "Capture Frequency",
-      "5": "Debug Channel"
+  "ModSettings": {
+    "xfdz.ModelPbrShader": {
+      "Settings": {
+        "Name": "Model PBR Shader",
+        "Title": "Adjust Model PBR Shader Settings",
+        "EnvironmentReflection": {
+          "Name": "Environment Reflection",
+          "Description": "Dynamic image-based lighting (IBL). Disable to improve performance"
+        },
+        "ReflectionQuality": {
+          "Name": "Reflection Quality",
+          "Description": "Resolution and sample count of IBL reflections"
+        },
+        "CaptureFrequency": {
+          "Name": "Capture Frequency",
+          "Description": "How often environment reflections are recaptured"
+        },
+        "DebugChannel": {
+          "Name": "Debug Channel",
+          "Description": "Visualize intermediate data for diagnosing materials"
+        }
+      },
+      "ReflectionQuality": {
+        "Low": "Low",
+        "Medium": "Medium",
+        "High": "High"
+      },
+      "CaptureFrequency": {
+        "Low": "Low",
+        "Medium": "Medium",
+        "High": "High"
+      },
+      "DebugChannel": {
+        "None": "None",
+        "UV0": "UV0",
+        "UV1": "UV1",
+        "NormalMap": "Normal Map",
+        "Normal": "Normal",
+        "GeometricNormal": "Geometric Normal",
+        "Tangent": "Tangent",
+        "TangentW": "Tangent W",
+        "Bitangent": "Bitangent",
+        "BaseColorAlpha": "Base Color Alpha",
+        "Occlusion": "Occlusion",
+        "Emissive": "Emissive",
+        "Metallic": "Metallic",
+        "Roughness": "Roughness",
+        "BaseColor": "Base Color",
+        "Clearcoat": "Clearcoat",
+        "ClearcoatRoughness": "Clearcoat Roughness",
+        "ClearcoatNormal": "Clearcoat Normal",
+        "Sheen": "Sheen",
+        "SheenRoughness": "Sheen Roughness",
+        "SpecularFactor": "Specular Factor",
+        "SpecularColor": "Specular Color",
+        "Transmission": "Transmission",
+        "VolumeThickness": "Volume Thickness",
+        "IridescenceFactor": "Iridescence Factor",
+        "IridescenceThickness": "Iridescence Thickness",
+        "AnisotropicStrength": "Anisotropic Strength",
+        "AnisotropicDirection": "Anisotropic Direction",
+        "DiffuseTransmissionFactor": "Diffuse Transmission Factor",
+        "DiffuseTransmissionColorFactor": "Diffuse Transmission Color",
+        "VolumeScatterMultiScatterColor": "Volume Scatter Multi-Scatter",
+        "VolumeScatterSingleScatterColor": "Volume Scatter Single-Scatter",
+        "IblRaw": "IBL Raw",
+        "NdotV": "N·V",
+        "FresnelDielectric": "Fresnel Dielectric",
+        "IblDiffuse": "IBL Diffuse",
+        "IblSpecular": "IBL Specular"
+      }
     }
   }
 }

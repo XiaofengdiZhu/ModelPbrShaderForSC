@@ -93,7 +93,7 @@ namespace Game {
         static IReadOnlyList<IReadOnlyList<CaptureStep>> GetScheduleForQuality() {
             return ModelPbrShaderSettings.IncludeSheen() switch {
                 false => CaptureScheduleLow,
-                true when ModelPbrShaderSettings.ReflectionQuality >= 2 => CaptureScheduleHigh,
+                true when ModelPbrShaderSettings.ReflectionQuality >= ReflectionQuality.High => CaptureScheduleHigh,
                 _ => CaptureScheduleMedium
             };
         }
@@ -541,7 +541,7 @@ namespace Game {
             ModelPbrShaderSettings.Dirty = false;
         }
 
-        int _lastAppliedQuality = ModelPbrShaderSettings.ReflectionQuality;
+        ReflectionQuality _lastAppliedQuality = ModelPbrShaderSettings.ReflectionQuality;
 
         public struct CelestialBodyCacheEntry {
             public bool Visible;

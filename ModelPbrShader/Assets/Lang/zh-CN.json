@@ -1,58 +1,75 @@
 {
-  "ModelPbrShaderLoader": {
-    "1": "模型 PBR 着色器"
-  },
-  "SettingsModelPbrShaderScreen": {
-    "EnvironmentReflection": [ "关", "开" ],
-    "ReflectionQuality": [ "低", "中", "高" ],
-    "CaptureFrequency": [ "低", "中", "高" ],
-    "DebugChannel": [
-      "无",
-      "UV0",
-      "UV1",
-      "法线贴图",
-      "法线（着色）",
-      "几何法线",
-      "切线",
-      "切线 W",
-      "副切线",
-      "基础色 Alpha",
-      "遮挡",
-      "自发光",
-      "金属度",
-      "粗糙度",
-      "基础色",
-      "清漆层",
-      "清漆粗糙度",
-      "清漆法线",
-      "光泽层",
-      "光泽粗糙度",
-      "高光因子",
-      "高光颜色",
-      "透射",
-      "体积厚度",
-      "虹彩因子",
-      "虹彩厚度",
-      "各向异性强度",
-      "各向异性方向",
-      "漫透射因子",
-      "漫透射颜色",
-      "体积多次散射色",
-      "体积单次散射色",
-      "IBL 原始",
-      "N·V",
-      "菲涅尔（介质）",
-      "IBL 漫反射",
-      "IBL 高光"
-    ]
-  },
-  "ContentWidgets": {
-    "SettingsModelPbrShaderScreen": {
-      "1": "调整模型 PBR 着色器设置",
-      "2": "环境反射",
-      "3": "反射画质",
-      "4": "捕获频率",
-      "5": "调试通道"
+  "ModSettings": {
+    "xfdz.ModelPbrShader": {
+      "Settings": {
+        "Name": "模型 PBR 着色器",
+        "Title": "调整模型 PBR 着色器设置",
+        "EnvironmentReflection": {
+          "Name": "环境反射",
+          "Description": "动态基于图像光照（IBL）。关闭可提升性能"
+        },
+        "ReflectionQuality": {
+          "Name": "反射画质",
+          "Description": "IBL 反射的分辨率与采样质量"
+        },
+        "CaptureFrequency": {
+          "Name": "捕获频率",
+          "Description": "环境反射捕获的更新频率"
+        },
+        "DebugChannel": {
+          "Name": "调试通道",
+          "Description": "可视化中间数据，用于排查材质问题"
+        }
+      },
+      "ReflectionQuality": {
+        "Low": "低",
+        "Medium": "中",
+        "High": "高"
+      },
+      "CaptureFrequency": {
+        "Low": "低",
+        "Medium": "中",
+        "High": "高"
+      },
+      "DebugChannel": {
+        "None": "无",
+        "UV0": "UV0",
+        "UV1": "UV1",
+        "NormalMap": "法线贴图",
+        "Normal": "法线（着色）",
+        "GeometricNormal": "几何法线",
+        "Tangent": "切线",
+        "TangentW": "切线 W",
+        "Bitangent": "副切线",
+        "BaseColorAlpha": "基础色 Alpha",
+        "Occlusion": "遮挡",
+        "Emissive": "自发光",
+        "Metallic": "金属度",
+        "Roughness": "粗糙度",
+        "BaseColor": "基础色",
+        "Clearcoat": "清漆层",
+        "ClearcoatRoughness": "清漆粗糙度",
+        "ClearcoatNormal": "清漆法线",
+        "Sheen": "光泽层",
+        "SheenRoughness": "光泽粗糙度",
+        "SpecularFactor": "高光因子",
+        "SpecularColor": "高光颜色",
+        "Transmission": "透射",
+        "VolumeThickness": "体积厚度",
+        "IridescenceFactor": "虹彩因子",
+        "IridescenceThickness": "虹彩厚度",
+        "AnisotropicStrength": "各向异性强度",
+        "AnisotropicDirection": "各向异性方向",
+        "DiffuseTransmissionFactor": "漫透射因子",
+        "DiffuseTransmissionColorFactor": "漫透射颜色",
+        "VolumeScatterMultiScatterColor": "体积多次散射色",
+        "VolumeScatterSingleScatterColor": "体积单次散射色",
+        "IblRaw": "IBL 原始",
+        "NdotV": "N·V",
+        "FresnelDielectric": "菲涅尔（介质）",
+        "IblDiffuse": "IBL 漫反射",
+        "IblSpecular": "IBL 高光"
+      }
     }
   }
 }
