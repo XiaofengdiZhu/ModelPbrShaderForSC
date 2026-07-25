@@ -9,6 +9,10 @@ namespace Game {
     partial class PbrRenderer {
         #region Shader Compilation
 
+        static readonly int WidgetShaderHashSalt = "__WIDGET__".GetHashCode();
+        static readonly int WidgetAlphaMaskHashSalt = "__WIDGET_ALPHA_MASK__".GetHashCode();
+        static readonly int WidgetTextureOverrideHashSalt = "__WIDGET_TEXTURE_OVERRIDE__".GetHashCode();
+
         protected override Shader CreateShaderVariant(ModelMesh mesh, ModelMaterial material, RenderContext context) =>
             CreateShaderVariantInternal(mesh, material, context, false);
 
@@ -20,6 +24,31 @@ namespace Game {
                 return shader;
             }
             return CreateShaderVariant(mesh, material, context);
+        }
+
+        Shader GetOrCreateWidgetShader(ModelMesh mesh, ModelMaterial material, RenderContext context, bool forceAlphaMask, bool hasTextureOverride) {
+            int materialHash = ComputeMaterialHash(material) * 31 + ComputeMorphHash(mesh);
+            materialHash = materialHash * 31 + WidgetShaderHashSalt;
+            materialHash = materialHash * 31 + ComputeWidgetVertexLayoutHash(mesh);
+            if (forceAlphaMask) {
+                materialHash = materialHash * 31 + WidgetAlphaMaskHashSalt;
+            }
+            if (hasTextureOverride) {
+                materialHash = materialHash * 31 + WidgetTextureOverrideHashSalt;
+            }
+            int contextHash = AdjustContextHashForMaterial(CachedContextHash, material, context);
+            Shader shader = ShaderCache.TryGetShaderProgram(materialHash, contextHash);
+            if (shader != null) {
+                return shader;
+            }
+            return CreateShaderVariantInternal(
+                mesh,
+                material,
+                context,
+                false,
+                hasTextureOverride,
+                forceAlphaMask ? ModelAlphaMode.Mask : null
+            );
         }
 
         Shader GetOrCreateInstancedShader(ModelMesh mesh, ModelMaterial material, RenderContext context, bool hasTextureOverride = false) {
@@ -39,7 +68,8 @@ namespace Game {
             ModelMaterial material,
             RenderContext context,
             bool isInstanced,
-            bool hasTextureOverride = false) {
+            bool hasTextureOverride = false,
+            ModelAlphaMode? alphaModeOverride = null) {
             ShaderDefines defines = new();
             AddVertexAttributeDefines(defines, mesh);
             if (isInstanced) {
@@ -76,7 +106,7 @@ namespace Game {
                 && HasMorphTargetData(mesh)) {
                 AddMorphTargetDefines(defines, mesh);
             }
-            ModelAlphaMode alphaMode = material?.AlphaMode ?? ModelAlphaMode.Opaque;
+            ModelAlphaMode alphaMode = alphaModeOverride ?? material?.AlphaMode ?? ModelAlphaMode.Opaque;
             defines.AddRaw($"ALPHAMODE {(int)alphaMode}");
             string fragShader = context.IsScatterPass ? "scatter.frag" :
                 material?.SpecularGlossiness?.IsEnabled == true ? "specular_glossiness.frag" : "pbr.frag";
@@ -182,6 +212,30 @@ namespace Game {
                     hash = hash * 31 + part.MorphTargetColor0Offset;
                     break;
                 }
+                return hash;
+            }
+        }
+
+        static int ComputeWidgetVertexLayoutHash(ModelMesh mesh) {
+            unchecked {
+                int hash = 17;
+                if (mesh == null) {
+                    return hash;
+                }
+                foreach (ModelMeshPart part in mesh.MeshParts) {
+                    VertexDeclaration declaration = part?.VertexBuffer?.VertexDeclaration;
+                    if (declaration == null) {
+                        hash = hash * 31;
+                        continue;
+                    }
+                    hash = hash * 31 + declaration.VertexStride;
+                    foreach (VertexElement element in declaration.VertexElements) {
+                        hash = hash * 31 + element.Semantic.GetHashCode();
+                        hash = hash * 31 + element.Format.GetHashCode();
+                        hash = hash * 31 + element.Offset;
+                    }
+                }
+                hash = hash * 31 + (HasSkinningData(mesh) ? 1 : 0);
                 return hash;
             }
         }

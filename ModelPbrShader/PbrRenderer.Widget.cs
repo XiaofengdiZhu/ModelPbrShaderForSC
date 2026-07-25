@@ -14,56 +14,86 @@ namespace Game {
         static readonly Comparison<PbrWidgetRenderEntry> WidgetBackToFrontComparison = (a, b) => b.Depth.CompareTo(a.Depth);
 
         internal void RenderWidget(ModelWidgetRenderContext context) {
-            PrepareWidgetQueues(context);
-            ConfigureWidgetContext(context);
+            RenderTarget2D outputTarget = Display.RenderTarget;
+            Viewport outputViewport = Display.Viewport;
+            Rectangle outputScissor = Display.ScissorRectangle;
+            try {
+                PrepareWidgetQueues(context);
+                ConfigureWidgetContext(context);
 
-            if (_widgetScatterEntries.Count > 0) {
-                _framebufferManager.EnsureScatterFramebuffer();
-                _framebufferManager.BindScatter();
-                _framebufferManager.ClearScatter();
-                CurrentContext.UseLinearOutput = true;
-                CurrentContext.IsScatterPass = true;
-                UpdateContextHash(CurrentContext);
-                foreach (PbrWidgetRenderEntry entry in _widgetScatterEntries) {
+                if (_widgetScatterEntries.Count > 0) {
+                    _framebufferManager.EnsureScatterFramebuffer();
+                    _framebufferManager.BindScatter();
+                    _framebufferManager.ClearScatter();
+                    CurrentContext.UseLinearOutput = true;
+                    CurrentContext.IsScatterPass = true;
+                    UpdateContextHash(CurrentContext);
+                    foreach (PbrWidgetRenderEntry entry in _widgetScatterEntries) {
+                        RenderWidgetEntry(entry, context);
+                    }
+                    CurrentContext.UseLinearOutput = false;
+                    CurrentContext.IsScatterPass = false;
+                    UpdateContextHash(CurrentContext);
+                    RestoreWidgetOutput(outputTarget, outputViewport, outputScissor);
+                }
+
+                foreach (PbrWidgetRenderEntry entry in _widgetOpaqueEntries) {
                     RenderWidgetEntry(entry, context);
                 }
-                CurrentContext.UseLinearOutput = false;
-                CurrentContext.IsScatterPass = false;
-                UpdateContextHash(CurrentContext);
-                _framebufferManager.UnbindFramebuffer();
-            }
 
-            foreach (PbrWidgetRenderEntry entry in _widgetOpaqueEntries) {
-                RenderWidgetEntry(entry, context);
-            }
-
-            SortWidgetTransparentEntries(context.ViewMatrix);
-            if (_widgetHasTransmission) {
-                foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
-                    if (entry.QueueType != PartRenderQueue.Transmission) {
+                SortWidgetTransparentEntries(context.ViewMatrix);
+                if (_widgetHasTransmission) {
+                    foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
+                        if (entry.QueueType != PartRenderQueue.Transmission) {
+                            RenderWidgetEntry(entry, context);
+                        }
+                    }
+                    _framebufferManager.EnsureTransmissionFramebuffer();
+                    _framebufferManager.BlitSourceToTransmission(outputTarget, outputViewport);
+                    _framebufferManager.GenerateTransmissionMipmap();
+                    RestoreWidgetOutput(outputTarget, outputViewport, outputScissor);
+                    foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
+                        if (entry.QueueType == PartRenderQueue.Transmission) {
+                            RenderWidgetEntry(entry, context);
+                        }
+                    }
+                }
+                else {
+                    foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
                         RenderWidgetEntry(entry, context);
                     }
                 }
-                _framebufferManager.EnsureTransmissionFramebuffer();
-                _framebufferManager.BlitBackbufferToTransmission(Display.Viewport.Width, Display.Viewport.Height);
-                _framebufferManager.GenerateTransmissionMipmap();
-                foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
-                    if (entry.QueueType == PartRenderQueue.Transmission) {
-                        RenderWidgetEntry(entry, context);
-                    }
-                }
             }
-            else {
-                foreach (PbrWidgetRenderEntry entry in _widgetAllTransparentEntries) {
-                    RenderWidgetEntry(entry, context);
-                }
+            finally {
+                RestoreWidgetOutput(outputTarget, outputViewport, outputScissor);
+                DisableInstanceAttributes();
+                GLWrapper.ApplyDepthStencilState(DepthStencilState.Default);
+                GLWrapper.ApplyRasterizerState(RasterizerState.CullCounterClockwiseScissor);
+                GLWrapper.ApplyBlendState(BlendState.Opaque);
             }
+        }
 
-            _framebufferManager.UnbindFramebuffer();
-            DisableInstanceAttributes();
-            GLWrapper.ApplyDepthStencilState(DepthStencilState.Default);
-            GLWrapper.ApplyRasterizerState(RasterizerState.CullCounterClockwiseScissor);
-            GLWrapper.ApplyBlendState(BlendState.Opaque);
+        static void RestoreWidgetOutput(RenderTarget2D target, Viewport viewport, Rectangle scissor) {
+            GLWrapper.ApplyRenderTarget(target);
+            GLWrapper.m_viewport = null;
+            GLWrapper.m_scissorRectangle = null;
+            GLWrapper.ApplyViewportScissor(viewport, scissor, Display.RasterizerState.ScissorTestEnable);
+        }
+
+        void SetupWidgetDepthState(ModelMaterial material, bool forceAlphaMask) {
+            if (forceAlphaMask) {
+                GLWrapper.ApplyDepthStencilState(DepthStencilState.Default);
+                return;
+            }
+            SetupDepthState(material);
+        }
+
+        void SetupWidgetBlendMode(ModelMaterial material, bool forceAlphaMask) {
+            if (forceAlphaMask) {
+                GLWrapper.ApplyBlendState(BlendState.Opaque);
+                return;
+            }
+            SetupBlendMode(material, CurrentContext);
         }
 
         bool _widgetHasTransmission;
@@ -186,21 +216,23 @@ namespace Game {
                 material = entry.TextureOverride is RenderTarget2D ? DefaultDielectricMaskMaterial : DefaultDielectricMaterial;
             }
             bool hasSkin = entry.Model?.HasSkin == true;
-            Shader shader = GetOrCreateShader(entry.Mesh, material, CurrentContext);
+            bool forceAlphaMask = context.UseAlphaThreshold;
+            Shader shader = GetOrCreateWidgetShader(entry.Mesh, material, CurrentContext, forceAlphaMask, entry.TextureOverride != null);
             if (shader == null) {
                 return;
             }
             shader.PrepareForDrawing();
+            context.SetupShaderParameters(shader, entry.Model, entry.Mesh);
             GLWrapper.UseProgram(shader.m_program);
             Matrix renderStateModelMatrix = hasSkin ? Matrix.Identity : entry.MeshTransform;
             UpdateRenderStateUBO(CurrentContext.Wvp, renderStateModelMatrix);
             SetupMorphTargets(entry.Part, shader);
-            UpdateWidgetMaterialUBOs(material, context.Color);
+            UpdateWidgetMaterialUBOs(material, context.Color, forceAlphaMask);
             UpdateUVTransformUBO(material);
             BindWidgetTextures(entry, material, shader);
-            SetupDepthState(material);
+            SetupWidgetDepthState(material, forceAlphaMask);
             SetupCullMode(material, entry.MeshTransform.Determinant() < 0f);
-            SetupBlendMode(material, CurrentContext);
+            SetupWidgetBlendMode(material, forceAlphaMask);
             SetupTransmissionUniforms(material, shader);
             SetupVolumeScatterUniforms(material, shader);
 
@@ -213,10 +245,15 @@ namespace Game {
             DrawMeshPart(entry.Part);
         }
 
-        void UpdateWidgetMaterialUBOs(ModelMaterial material, Color color) {
+        void UpdateWidgetMaterialUBOs(ModelMaterial material, Color color, bool forceAlphaMask) {
             Vector4 colorFactor = new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
             MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, false);
             coreData.BaseColorFactor *= colorFactor;
+            if (forceAlphaMask) {
+                coreData.AlphaMode = (int)ModelAlphaMode.Mask;
+                // PBR's mask test is strict (<), so this preserves the stock zero-threshold discard of alpha 0.
+                coreData.AlphaCutoff = 0.00001f;
+            }
             _materialCoreUBO.Update(ref coreData);
 
             int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);

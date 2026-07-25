@@ -98,7 +98,22 @@ namespace Game {
             GLWrapper.GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, maxLevel);
         }
 
-        public void BlitBackbufferToTransmission(int screenWidth, int screenHeight) => Transmission?.BlitFromBackbuffer(screenWidth, screenHeight);
+        public void BlitSourceToTransmission(RenderTarget2D source, Viewport sourceViewport) {
+            if (Transmission == null) {
+                return;
+            }
+            if (source == null) {
+                Transmission.BlitFromBackbuffer(sourceViewport.Width, sourceViewport.Height);
+            }
+            else {
+                Transmission.BlitFromRenderTarget(source, new Engine.Rectangle(
+                    sourceViewport.X,
+                    sourceViewport.Y,
+                    sourceViewport.Width,
+                    sourceViewport.Height
+                ));
+            }
+        }
 
         public void UnbindFramebuffer() {
             GLWrapper.ApplyRenderTarget(null);
