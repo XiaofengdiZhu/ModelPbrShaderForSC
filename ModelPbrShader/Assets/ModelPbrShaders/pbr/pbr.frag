@@ -35,6 +35,11 @@ precision highp float;
 
 out vec4 g_finalColor;
 
+uniform float u_AmbientStrength;
+#ifdef MATERIAL_TRANSMISSION
+uniform float u_TransmissionFramebufferEnabled;
+#endif
+
 #ifdef USE_INSTANCING
 in vec2 v_instanceLight;
 #else
@@ -251,10 +256,21 @@ void main()
 
     #endif//end USE_IBL
 
+    #if defined(MATERIAL_TRANSMISSION)
+    if (iblStrength <= 0.0 && u_TransmissionFramebufferEnabled > 0.5) {
+        vec3 framebufferTransmission = getIBLVolumeRefraction(
+        n, v,
+        materialInfo.perceptualRoughness,
+        baseColor.rgb, v_Position, u_ModelMatrix, u_ViewMatrix, u_ProjectionMatrix,
+        materialInfo.ior, materialInfo.thickness, materialInfo.attenuationColor, materialInfo.attenuationDistance, materialInfo.dispersion);
+        color = mix(color, framebufferTransmission, materialInfo.transmissionFactor);
+    }
+    #endif
+
     #if !defined(USE_IBL) && !defined(MATERIAL_TRANSMISSION)
     // Simple hemisphere ambient when IBL is disabled
     float ambientUp = n.y * 0.5 + 0.5;
-    float ambientStrength = iblStrength * mix(0.15, 0.5, ambientUp);
+    float ambientStrength = max(iblStrength, u_AmbientStrength) * mix(0.15, 0.5, ambientUp);
     vec3 ambientColor = baseColor.rgb * ambientStrength;
     #ifdef HAS_OCCLUSION_MAP
     ao = texture(u_OcclusionSampler, getOcclusionUV()).r;

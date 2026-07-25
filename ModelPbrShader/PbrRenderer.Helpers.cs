@@ -67,6 +67,7 @@ namespace Game {
             if (iblStrengthLoc >= 0) {
                 GLWrapper.GL.Uniform1(iblStrengthLoc, CalculateIblStrength(modelData));
             }
+            SetAmbientStrength(shader, 0f);
             UpdateLightsUBO(modelData.Light);
         }
 
@@ -78,6 +79,18 @@ namespace Game {
             }
             if (glymulLoc >= 0) {
                 GLWrapper.GL.Uniform1(glymulLoc, Display.RenderTarget != null ? -1f : 1f);
+            }
+            SetAmbientStrength(shader, 0f);
+        }
+
+        void SetAmbientStrength(Shader shader, float strength) {
+            int programHandle = shader.m_program;
+            if (!_ambientStrengthLocCache.TryGetValue(programHandle, out int ambientStrengthLoc)) {
+                ambientStrengthLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_AmbientStrength");
+                _ambientStrengthLocCache[programHandle] = ambientStrengthLoc;
+            }
+            if (ambientStrengthLoc >= 0) {
+                GLWrapper.GL.Uniform1(ambientStrengthLoc, strength);
             }
         }
 

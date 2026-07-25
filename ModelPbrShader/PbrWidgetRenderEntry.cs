@@ -9,6 +9,8 @@ namespace Game {
         public ModelMeshPart Part;
         public ModelMaterial Material;
         public Texture2D TextureOverride;
+        public Texture2D ResolvedBaseColorTexture;
+        public bool UseResolvedBaseColorTexture;
         public Matrix MeshTransform;
         public PartRenderQueue QueueType;
         public float Depth;

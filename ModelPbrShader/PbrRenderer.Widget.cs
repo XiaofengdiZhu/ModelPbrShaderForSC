@@ -14,6 +14,7 @@ namespace Game {
         static readonly Comparison<PbrWidgetRenderEntry> WidgetBackToFrontComparison = (a, b) => b.Depth.CompareTo(a.Depth);
 
         internal void RenderWidget(ModelWidgetRenderContext context) {
+            RebindUniformBuffers();
             RenderTarget2D outputTarget = Display.RenderTarget;
             Viewport outputViewport = Display.Viewport;
             Rectangle outputScissor = Display.ScissorRectangle;
@@ -119,6 +120,10 @@ namespace Game {
                     Matrix meshTransform = context.GetMeshTransform(model, mesh) * context.ModelTransform;
                     foreach (ModelMeshPart part in mesh.MeshParts) {
                         ModelMaterial material = model.GetMaterial(part.MaterialIndex);
+                        Texture2D resolvedBaseColorTexture = context.GetTexture(model, part);
+                        bool useResolvedBaseColorTexture = textureOverride != null
+                            || material?.BaseColorTexture?.TextureIndex >= 0
+                            || material == null;
                         PartRenderQueue queueType = PartRenderEntry.ComputeQueueType(material);
                         PbrWidgetRenderEntry entry = new() {
                             Model = model,
@@ -126,6 +131,8 @@ namespace Game {
                             Part = part,
                             Material = material,
                             TextureOverride = textureOverride,
+                            ResolvedBaseColorTexture = resolvedBaseColorTexture,
+                            UseResolvedBaseColorTexture = useResolvedBaseColorTexture,
                             MeshTransform = meshTransform,
                             QueueType = queueType
                         };
@@ -152,7 +159,8 @@ namespace Game {
         }
 
         void ConfigureWidgetContext(ModelWidgetRenderContext context) {
-            CurrentContext.View = context.ViewMatrix;
+            // Widget vertices are transformed into view space before fragment shading.
+            CurrentContext.View = Matrix.Identity;
             CurrentContext.Projection = context.ProjectionMatrix;
             CurrentContext.CameraView = context.ViewMatrix;
             CurrentContext.Wvp = context.ViewMatrix * context.ProjectionMatrix;
@@ -161,7 +169,7 @@ namespace Game {
             CurrentContext.IsScatterPass = false;
             CurrentContext.ToneMapMode = ToneMapMode.KhrPbrNeutral;
             CurrentContext.HasPunctualLight = true;
-            CurrentContext.DebugChannel = DebugChannel.None;
+            CurrentContext.DebugChannel = ModelPbrShaderSettings.DebugChannel;
             CurrentContext.EnableSkinning = false;
             CurrentContext.EnableMorphing = true;
             CurrentContext.LightDirection = Vector3.Normalize(new Vector3(1f, 1f, -1f));
@@ -215,40 +223,80 @@ namespace Game {
             if (material == null) {
                 material = entry.TextureOverride is RenderTarget2D ? DefaultDielectricMaskMaterial : DefaultDielectricMaterial;
             }
-            bool hasSkin = entry.Model?.HasSkin == true;
+            bool usesSkinning = HasSkinningData(entry.Mesh);
             bool forceAlphaMask = context.UseAlphaThreshold;
-            Shader shader = GetOrCreateWidgetShader(entry.Mesh, material, CurrentContext, forceAlphaMask, entry.TextureOverride != null);
+            Shader shader = GetOrCreateWidgetShader(entry.Mesh, material, CurrentContext, forceAlphaMask, entry.UseResolvedBaseColorTexture);
             if (shader == null) {
                 return;
             }
             shader.PrepareForDrawing();
             context.SetupShaderParameters(shader, entry.Model, entry.Mesh);
             GLWrapper.UseProgram(shader.m_program);
-            Matrix renderStateModelMatrix = hasSkin ? Matrix.Identity : entry.MeshTransform;
-            UpdateRenderStateUBO(CurrentContext.Wvp, renderStateModelMatrix);
+            SetWidgetPerDrawUniforms(shader);
+            Matrix renderStateWvp = usesSkinning
+                ? context.ViewMatrix * context.ProjectionMatrix
+                : entry.MeshTransform * context.ViewMatrix * context.ProjectionMatrix;
+            Matrix renderStateModelMatrix = usesSkinning
+                ? context.ViewMatrix
+                : entry.MeshTransform * context.ViewMatrix;
+            UpdateRenderStateUBO(renderStateWvp, renderStateModelMatrix);
             SetupMorphTargets(entry.Part, shader);
             UpdateWidgetMaterialUBOs(material, context.Color, forceAlphaMask);
             UpdateUVTransformUBO(material);
+
+            if (usesSkinning) {
+                JointTexture jointTexture = GetOrCreateJointTexture(entry.Model);
+                int jointCount = context.CalculateJointMatrices(entry.Model, _widgetJointMatricesBuffer);
+                jointTexture.Update(_widgetJointMatricesBuffer.AsSpan(0, jointCount));
+                BindJointTexture(jointTexture, shader);
+            }
+            // JointTexture.Update temporarily uses TEXTURE0 and unbinds it on completion.
+            // Bind material textures afterwards so the base-color sampler cannot be cleared.
             BindWidgetTextures(entry, material, shader);
             SetupWidgetDepthState(material, forceAlphaMask);
             SetupCullMode(material, entry.MeshTransform.Determinant() < 0f);
             SetupWidgetBlendMode(material, forceAlphaMask);
             SetupTransmissionUniforms(material, shader);
             SetupVolumeScatterUniforms(material, shader);
-
-            if (hasSkin) {
-                JointTexture jointTexture = GetOrCreateJointTexture(entry.Model);
-                int jointCount = context.CalculateJointMatrices(entry.Model, _widgetJointMatricesBuffer);
-                jointTexture.Update(_widgetJointMatricesBuffer.AsSpan(0, jointCount));
-                BindJointTexture(jointTexture, shader);
-            }
             DrawMeshPart(entry.Part);
+        }
+
+        void SetWidgetPerDrawUniforms(Shader shader) {
+            int programHandle = shader.m_program;
+            if (!_glymulLocationCache.TryGetValue(programHandle, out int glymulLoc)) {
+                glymulLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_glymul");
+                _glymulLocationCache[programHandle] = glymulLoc;
+            }
+            if (glymulLoc >= 0) {
+                GLWrapper.GL.Uniform1(glymulLoc, Display.RenderTarget != null ? -1f : 1f);
+            }
+
+            if (!_celestialBodyVisibleLocCache.TryGetValue(programHandle, out int celestialBodyLoc)) {
+                celestialBodyLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_CelestialBody");
+                _celestialBodyVisibleLocCache[programHandle] = celestialBodyLoc;
+            }
+            if (celestialBodyLoc >= 0) {
+                GLWrapper.GL.Uniform1(celestialBodyLoc, 1f);
+            }
+
+            if (!_iblStrengthLocCache.TryGetValue(programHandle, out int iblStrengthLoc)) {
+                iblStrengthLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_IblStrength");
+                _iblStrengthLocCache[programHandle] = iblStrengthLoc;
+            }
+            if (iblStrengthLoc >= 0) {
+                GLWrapper.GL.Uniform1(iblStrengthLoc, 0f);
+            }
+
+            SetAmbientStrength(shader, 1f);
         }
 
         void UpdateWidgetMaterialUBOs(ModelMaterial material, Color color, bool forceAlphaMask) {
             Vector4 colorFactor = new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
             MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, false);
-            coreData.BaseColorFactor *= colorFactor;
+            // Debug views expose glTF material inputs; Widget tint belongs to the normal UI composition path.
+            if (CurrentContext.DebugChannel == DebugChannel.None) {
+                coreData.BaseColorFactor *= colorFactor;
+            }
             if (forceAlphaMask) {
                 coreData.AlphaMode = (int)ModelAlphaMode.Mask;
                 // PBR's mask test is strict (<), so this preserves the stock zero-threshold discard of alpha 0.
@@ -273,13 +321,14 @@ namespace Game {
         }
 
         void BindWidgetTextures(PbrWidgetRenderEntry entry, ModelMaterial material, Shader shader) {
-            if (entry.TextureOverride != null) {
-                MaterialTextureBinder.BindTexture2D(entry.TextureOverride, MaterialTextureSlot.BaseColor);
-            }
-            else if (entry.Model != null) {
+            if (entry.Model != null) {
                 BindMaterialTextures(entry.Model, material, shader, null);
+            }
+            if (entry.UseResolvedBaseColorTexture && entry.ResolvedBaseColorTexture != null) {
+                MaterialTextureBinder.BindTexture2D(entry.ResolvedBaseColorTexture, MaterialTextureSlot.BaseColor);
             }
             MaterialTextureBinder.SetTextureSlotUniforms(shader);
         }
+
     }
 }

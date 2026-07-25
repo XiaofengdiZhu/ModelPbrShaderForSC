@@ -42,12 +42,12 @@ namespace Game {
         readonly List<PbrWidgetRenderEntry> _widgetOpaqueEntries = [];
         readonly List<PbrWidgetRenderEntry> _widgetScatterEntries = [];
         readonly List<PbrWidgetRenderEntry> _widgetTransparentEntries = [];
-
         // PBR 材质 UBO
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
         readonly UniformBuffer<MaterialExtensionData> _materialExtUBO = new(6);
         readonly Dictionary<int, int> _morphSamplerLocationCache = [];
         readonly Dictionary<(int programHandle, int weightIndex), int> _morphWeightLocationCache = [];
+        readonly Dictionary<int, int> _ambientStrengthLocCache = [];
 
         // Per-mesh-part 渲染队列
         readonly List<PartRenderEntry> _opaqueEntries = [];
@@ -58,6 +58,7 @@ namespace Game {
         readonly List<PartRenderEntry> _skinnedOpaqueEntries = [];
         readonly List<Model> _staleJointModels = [];
         readonly Dictionary<int, int> _transmissionSamplerLocCache = [];
+        readonly Dictionary<int, int> _transmissionEnabledLocCache = [];
         readonly Dictionary<int, (int sizeLoc, int screenLoc)> _transmissionSizeLocCache = [];
         readonly List<PartRenderEntry> _transparentAfterWater = [];
         readonly List<PartRenderEntry> _transparentBeforeWater = [];
@@ -452,6 +453,19 @@ namespace Game {
 
         #endregion
 
+        /// <summary>
+        /// Restores this renderer's UBO bindings after another PbrRenderer instance used the shared binding points.
+        /// </summary>
+        void RebindUniformBuffers() {
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 0u, SceneUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 1u, _materialCoreUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 2u, LightsUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 3u, RenderStateUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 4u, UVTransformUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 5u, _volumeScatterUBO.m_handle);
+            GLWrapper.GL.BindBufferBase(BufferTargetARB.UniformBuffer, 6u, _materialExtUBO.m_handle);
+        }
+
         public override void Dispose() {
             IblSampler?.Dispose();
             foreach (JointTexture jt in _jointTextures.Values) {
@@ -479,6 +493,7 @@ namespace Game {
         }
 
         public override void BeginFrame(Camera camera, List<SubsystemModelsRenderer.ModelData> allModels) {
+            RebindUniformBuffers();
             _allModels = allModels;
 
             // 热调整设置
@@ -964,10 +979,18 @@ namespace Game {
             if (material?.Transmission?.IsEnabled != true) {
                 return;
             }
-            if (!_framebufferManager.HasTransmissionFramebuffer) {
+            int programHandle = shader.m_program;
+            if (!_transmissionEnabledLocCache.TryGetValue(programHandle, out int enabledLoc)) {
+                enabledLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TransmissionFramebufferEnabled");
+                _transmissionEnabledLocCache[programHandle] = enabledLoc;
+            }
+            bool framebufferEnabled = _framebufferManager.HasTransmissionFramebuffer;
+            if (enabledLoc >= 0) {
+                GLWrapper.GL.Uniform1(enabledLoc, framebufferEnabled ? 1f : 0f);
+            }
+            if (!framebufferEnabled) {
                 return;
             }
-            int programHandle = shader.m_program;
             if (!_transmissionSamplerLocCache.TryGetValue(programHandle, out int samplerLoc)) {
                 samplerLoc = GLWrapper.GL.GetUniformLocation((uint)programHandle, "u_TransmissionFramebufferSampler");
                 _transmissionSamplerLocCache[programHandle] = samplerLoc;
