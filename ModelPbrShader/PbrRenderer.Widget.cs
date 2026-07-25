@@ -192,9 +192,10 @@ namespace Game {
             }
             shader.PrepareForDrawing();
             GLWrapper.UseProgram(shader.m_program);
-            UpdateRenderStateUBO(CurrentContext.Wvp, entry.MeshTransform);
+            Matrix renderStateModelMatrix = hasSkin ? Matrix.Identity : entry.MeshTransform;
+            UpdateRenderStateUBO(CurrentContext.Wvp, renderStateModelMatrix);
             SetupMorphTargets(entry.Part, shader);
-            UpdateMaterialUBOs(material, false);
+            UpdateWidgetMaterialUBOs(material, context.Color);
             UpdateUVTransformUBO(material);
             BindWidgetTextures(entry, material, shader);
             SetupDepthState(material);
@@ -210,6 +211,28 @@ namespace Game {
                 BindJointTexture(jointTexture, shader);
             }
             DrawMeshPart(entry.Part);
+        }
+
+        void UpdateWidgetMaterialUBOs(ModelMaterial material, Color color) {
+            Vector4 colorFactor = new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+            MaterialCoreData coreData = MaterialUboBuilder.BuildMaterialCoreData(material, false);
+            coreData.BaseColorFactor *= colorFactor;
+            _materialCoreUBO.Update(ref coreData);
+
+            int extensionFlags = (int)MaterialUboBuilder.BuildExtensionFlags(material);
+            if (LastMaterial != material || LastMaterialVersion != material.Version) {
+                MaterialExtensionData extensionData = MaterialUboBuilder.BuildMaterialExtensionData(material);
+                _materialExtUBO.Update(ref extensionData);
+                LastMaterial = material;
+                LastMaterialVersion = material.Version;
+                LastExtensionFlags = extensionFlags;
+                UvTransformDirty = true;
+            }
+            else if (LastExtensionFlags != extensionFlags) {
+                MaterialExtensionData extensionData = MaterialUboBuilder.BuildMaterialExtensionData(material);
+                _materialExtUBO.Update(ref extensionData);
+                LastExtensionFlags = extensionFlags;
+            }
         }
 
         void BindWidgetTextures(PbrWidgetRenderEntry entry, ModelMaterial material, Shader shader) {
