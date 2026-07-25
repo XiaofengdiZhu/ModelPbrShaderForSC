@@ -11,6 +11,7 @@ namespace Game {
         public SubsystemSky _subsystemSky;
         public SubsystemPlayers _subsystemPlayers;
         public static PbrRenderer Renderer { get; private set; }
+        public static PbrModelWidgetRenderer WidgetRenderer;
 
         public override void Load(ValuesDictionary valuesDictionary) {
             // 获取子系统引用
@@ -18,6 +19,18 @@ namespace Game {
             _subsystemTerrain = Project.FindSubsystem<SubsystemTerrain>();
             _subsystemSky = Project.FindSubsystem<SubsystemSky>();
             _subsystemPlayers = Project.FindSubsystem<SubsystemPlayers>();
+            if (WidgetRenderer == null) {
+                try {
+                    WidgetRenderer = new PbrModelWidgetRenderer();
+                    WidgetRenderer.Initialize();
+                }
+                catch (Exception ex) {
+                    Log.Error("[PBR Shader] Failed to initialize widget renderer: " + ex.Message + "\n" + ex.StackTrace);
+                }
+            }
+            if (WidgetRenderer != null) {
+                ModelWidget.CustomRenderer = WidgetRenderer;
+            }
             if (Renderer == null) {
                 Model.LoadTexturesInSrgb = true;
                 try {
@@ -64,6 +77,12 @@ namespace Game {
             foreach (int playerIndex in playerKeys) {
                 Renderer.CleanupPlayerData(playerIndex);
             }
+
+            if (ReferenceEquals(ModelWidget.CustomRenderer, WidgetRenderer)) {
+                ModelWidget.CustomRenderer = null;
+            }
+            WidgetRenderer?.Dispose();
+            WidgetRenderer = null;
         }
 
         void OnPlayerRemoved(PlayerData playerData) {
