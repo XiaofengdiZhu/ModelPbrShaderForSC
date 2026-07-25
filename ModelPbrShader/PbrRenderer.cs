@@ -37,6 +37,11 @@ namespace Game {
         readonly List<List<PartRenderEntry>> _listPool = [];
         readonly Dictionary<Model, JointTexture> _jointTextures = new();
         readonly Matrix[] _jointMatricesBuffer = new Matrix[1024];
+        readonly List<PbrWidgetRenderEntry> _widgetAllTransparentEntries = [];
+        readonly Matrix[] _widgetJointMatricesBuffer = new Matrix[1024];
+        readonly List<PbrWidgetRenderEntry> _widgetOpaqueEntries = [];
+        readonly List<PbrWidgetRenderEntry> _widgetScatterEntries = [];
+        readonly List<PbrWidgetRenderEntry> _widgetTransparentEntries = [];
 
         // PBR 材质 UBO
         readonly UniformBuffer<MaterialCoreData> _materialCoreUBO = new(1);
