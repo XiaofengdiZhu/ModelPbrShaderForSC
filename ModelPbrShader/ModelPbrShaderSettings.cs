@@ -36,19 +36,6 @@ namespace Game {
             Dirty = true;
         }
 
-        /// <summary>
-        /// 首次运行（持久化中无 EnvironmentReflection）且为桌面平台时，写入开启动态 IBL 的默认值，
-        /// 复刻旧逻辑（桌面默认开、安卓默认关）。已持久化则尊重玩家设置，不再覆盖。
-        /// </summary>
-        public static void ApplyPlatformDefaultOnFirstRun() {
-            if (HasPersisted(EnvironmentReflectionId)) return;
-            bool desktop = VersionsManager.CurrentPlatform is VersionsManager.Platform.Windows
-                or VersionsManager.Platform.Linux;
-            if (desktop) {
-                ModSettingsManager.Set(new[] { PackageName, PageId, EnvironmentReflectionId }, true);
-            }
-        }
-
         /// <summary>ModLoader.OnModSettingChanged 收到变更时调用，更新缓存并标记 Dirty。</summary>
         public static void ApplySettingChange(string itemId, object value) {
             switch (itemId) {
